@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Mac 极简风格全局样式 */
+:root {
+  --sidebar-width: 240px;
+  --topbar-height: 56px;
+  --transition-fast: 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-normal: 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f5f5f7;
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-text: #1d1d1f;
+  --color-text-secondary: #86868b;
+}
+
+.dark {
+  color-scheme: dark;
+  --color-bg: #1c1c1e;
+  --color-bg-secondary: #2c2c2e;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text: #f5f5f7;
+  --color-text-secondary: #98989d;
+}
+
+/* 滚动条 - macOS 风格 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* 基础重置 */
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'Helvetica Neue', Arial, 'Noto Sans SC', system-ui, sans-serif;
+  color: var(--color-text);
+  background-color: var(--color-bg-secondary);
+}
+
+/* 选中颜色 */
+::selection {
+  background: rgba(0, 122, 255, 0.2);
+}
+
+/* Material Symbols 图标 */
+.icon {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+}
+
+/* Mac 极简卡片样式 */
+@layer components {
+  .mac-card {
+    @apply bg-white dark:bg-[#2c2c2e] rounded-mac border border-black/5 dark:border-white/10;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 0 0 0.5px rgba(0,0,0,0.04);
+  }
+
+  .mac-card-hover {
+    @apply mac-card;
+    transition: box-shadow var(--transition-normal), transform var(--transition-normal);
+  }
+
+  .mac-card-hover:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.04);
+    transform: translateY(-1px);
+  }
+
+  .mac-button {
+    @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium
+      rounded-mac transition-all duration-150 select-none
+      border border-transparent;
+  }
+
+  .mac-button-primary {
+    @apply mac-button bg-[#007AFF] text-white hover:bg-[#0066D6] active:bg-[#0055B3];
+  }
+
+  .mac-button-secondary {
+    @apply mac-button bg-[#f5f5f7] dark:bg-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7]
+      hover:bg-[#e8e8ed] dark:hover:bg-[#48484a]
+      border border-black/8 dark:border-white/10;
+  }
+
+  .mac-input {
+    @apply w-full px-3 py-1.5 text-sm rounded-mac border border-black/10 dark:border-white/10
+      bg-white dark:bg-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7]
+      placeholder:text-[#86868b] dark:placeholder:text-[#98989d]
+      focus:outline-none focus:ring-2 focus:ring-[#007AFF]/30 focus:border-[#007AFF]
+      transition-all duration-150;
+  }
+}
+
+/* 过渡动画 */
+.fade-in {
+  animation: fadeIn var(--transition-normal) ease-out;
+}
+
+.slide-in-right {
+  animation: slideInRight var(--transition-normal) ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
