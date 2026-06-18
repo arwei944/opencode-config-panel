@@ -42,6 +42,7 @@ const AGENT_TEMPLATES = [
  */
 export function AgentsPage() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [defaultAgent, setDefaultAgent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +67,7 @@ export function AgentsPage() {
     try {
       const data = await fetchAgents();
       setAgents(data.agents);
+      setDefaultAgent(data.defaultAgent || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载代理失败');
     } finally {
@@ -189,12 +191,40 @@ export function AgentsPage() {
         </Card>
       )}
 
+      {/* 默认代理 */}
+      {defaultAgent && (
+        <Card title={`默认代理`}>
+          {(() => {
+            const da = agents.find(a => a.name === defaultAgent);
+            return da ? (
+              <div className="flex items-center justify-between p-3 rounded-md bg-primary-50/50 dark:bg-primary-900/10 border border-primary-200 dark:border-primary-800">
+                <div className="flex items-center gap-3">
+                  <span className="icon text-primary-500 text-2xl">star</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{da.name}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">{da.config.description || '默认入口代理'}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="primary" size="sm">默认</Badge>
+                  <Button size="sm" variant="ghost" icon="edit" onClick={() => handleEdit(da)}>编辑</Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">默认代理 "{defaultAgent}" 的配置文件不存在</p>
+            );
+          })()}
+        </Card>
+      )}
+
       {/* 主代理 */}
       <Card title={`主代理 (${primaryAgents.length})`}>
         {primaryAgents.length === 0 ? (
           <EmptyState icon="smart_toy" title="暂无主代理" description="主代理是入口代理，可调用子代理" />
         ) : (
-          <AgentList agents={primaryAgents} onEdit={handleEdit} onDelete={setDeleteTarget} />
+          <AgentList agents={primaryAgents} onEdit={handleEdit} onDelete={setDeleteTarget} defaultAgent={defaultAgent} />
         )}
       </Card>
 
@@ -203,7 +233,7 @@ export function AgentsPage() {
         {subAgents.length === 0 ? (
           <EmptyState icon="smart_toy" title="暂无子代理" description="子代理可被主代理调用来完成特定任务" />
         ) : (
-          <AgentList agents={subAgents} onEdit={handleEdit} onDelete={setDeleteTarget} />
+          <AgentList agents={subAgents} onEdit={handleEdit} onDelete={setDeleteTarget} defaultAgent={defaultAgent} />
         )}
       </Card>
 
@@ -258,37 +288,46 @@ interface AgentListProps {
   agents: AgentInfo[];
   onEdit: (agent: AgentInfo) => void;
   onDelete: (agent: AgentInfo) => void;
+  defaultAgent?: string | null;
 }
 
-function AgentList({ agents, onEdit, onDelete }: AgentListProps) {
+function AgentList({ agents, onEdit, onDelete, defaultAgent }: AgentListProps) {
   return (
     <div className="space-y-2">
-      {agents.map(agent => (
-        <div
-          key={agent.name}
-          className="flex items-center justify-between p-3 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-        >
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{agent.name}</span>
-              <Badge variant={agent.config.mode === 'primary' || agent.config.mode === 'all' ? 'primary' : 'default'} size="sm">
-                {agent.config.mode || 'subagent'}
-              </Badge>
-              {agent.config.disable && <Badge variant="warning" size="sm">已禁用</Badge>}
+      {agents.map(agent => {
+        const isDefault = agent.name === defaultAgent;
+        return (
+          <div
+            key={agent.name}
+            className={`flex items-center justify-between p-3 rounded-md transition-colors ${
+              isDefault
+                ? 'bg-primary-50/30 dark:bg-primary-900/5 border border-primary-200/50 dark:border-primary-800/30'
+                : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'
+            }`}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{agent.name}</span>
+                {isDefault && <Badge variant="primary" size="sm">默认</Badge>}
+                <Badge variant={agent.config.mode === 'primary' || agent.config.mode === 'all' ? 'primary' : 'default'} size="sm">
+                  {agent.config.mode || 'subagent'}
+                </Badge>
+                {agent.config.disable && <Badge variant="warning" size="sm">已禁用</Badge>}
+              </div>
+              {agent.config.description && (
+                <p className="text-xs text-gray-500 mt-0.5 truncate">{agent.config.description}</p>
+              )}
+              {agent.config.model && (
+                <p className="text-xs text-gray-400 font-mono mt-0.5">{agent.config.model}</p>
+              )}
             </div>
-            {agent.config.description && (
-              <p className="text-xs text-gray-500 mt-0.5 truncate">{agent.config.description}</p>
-            )}
-            {agent.config.model && (
-              <p className="text-xs text-gray-400 font-mono mt-0.5">{agent.config.model}</p>
-            )}
+            <div className="flex items-center gap-1 ml-4">
+              <Button size="sm" variant="ghost" icon="edit" onClick={() => onEdit(agent)}>编辑</Button>
+              <Button size="sm" variant="ghost" icon="delete" onClick={() => onDelete(agent)}>删除</Button>
+            </div>
           </div>
-          <div className="flex items-center gap-1 ml-4">
-            <Button size="sm" variant="ghost" icon="edit" onClick={() => onEdit(agent)}>编辑</Button>
-            <Button size="sm" variant="ghost" icon="delete" onClick={() => onDelete(agent)}>删除</Button>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

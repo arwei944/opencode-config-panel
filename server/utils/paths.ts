@@ -53,3 +53,18 @@ export function getSkillFilePath(name: string): string {
 export function getBackupPath(timestamp: string): string {
   return path.join(getBackupsDir(), timestamp);
 }
+
+/** opencode 本地数据目录 ~/.local/share/opencode/ */
+export function getShareDir(): string {
+  return path.join(os.homedir(), '.local', 'share', 'opencode');
+}
+
+/** auth.json 凭证文件路径 */
+export function getAuthPath(): string {
+  return path.join(getShareDir(), 'auth.json');
+}
+
+/** account.json 账户文件路径 */
+export function getAccountPath(): string {
+  return path.join(getShareDir(), 'account.json');
+}

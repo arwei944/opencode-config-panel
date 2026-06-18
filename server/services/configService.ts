@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
-import { getConfigPath, getBackupsDir } from '../utils/paths';
+import { getConfigPath, getBackupsDir, getSkillsDir, getAuthPath } from '../utils/paths';
 import { deepMerge, deepClone } from '../utils/deepMerge';
 import { AppError } from '../middleware/errorHandler';
 import type {
@@ -176,15 +176,6 @@ class ConfigService {
   async getSummary(): Promise<ConfigSummary> {
     const config = await this.getConfig();
 
-    let modelCount = 0;
-    if (config.provider) {
-      for (const provider of Object.values(config.provider)) {
-        if (provider.models) {
-          modelCount += Object.keys(provider.models).length;
-        }
-      }
-    }
-
     let fileSize = 0;
     let lastModified = '';
     try {
@@ -195,17 +186,100 @@ class ConfigService {
       // 文件不存在时使用默认值
     }
 
+    // 合并统计提供商（opencode.json + auth.json）
+    const mergedProviderCount = await this.countProviders();
+    const mergedModelCount = await this.countModels(mergedProviderCount);
+
     return {
-      providerCount: config.provider ? Object.keys(config.provider).length : 0,
-      modelCount,
+      providerCount: mergedProviderCount,
+      modelCount: mergedModelCount,
       agentCount: config.agent ? Object.keys(config.agent).length : 0,
       mcpCount: config.mcp ? Object.keys(config.mcp).length : 0,
-      skillCount: 0, // 技能需要额外扫描 skills/ 目录
+      skillCount: await this.countSkills(),
       toolCount: config.tools ? Object.keys(config.tools).length : 0,
       configSize: fileSize,
       lastModified,
       configPath: this.configPath,
     };
+  }
+
+  // ============================================================
+  // 辅助方法：统计提供商总数（opencode.json + auth.json 映射后去重）
+  // ============================================================
+  private async countProviders(): Promise<number> {
+    const config = await this.getConfig();
+    const jsonCount = config.provider ? Object.keys(config.provider).length : 0;
+
+    // 补充 auth.json 中的账户（映射为提供商名后去重）
+    const providerNames = new Set(Object.keys(config.provider || {}));
+    try {
+      const raw = await fsPromises.readFile(getAuthPath(), 'utf-8');
+      const auth = JSON.parse(raw);
+      for (const accountName of Object.keys(auth)) {
+        // agnes-ai → opencode 映射
+        const providerName = accountName === 'agnes-ai' ? 'opencode' : accountName;
+        if (!providerNames.has(providerName)) {
+          providerNames.add(providerName);
+        }
+      }
+    } catch {}
+
+    return providerNames.size;
+  }
+
+  // ============================================================
+  // 辅助方法：统计模型总数（从所有提供商）
+  // ============================================================
+  private async countModels(providerCount: number): Promise<number> {
+    if (providerCount === 0) return 0;
+    const config = await this.getConfig();
+    let count = 0;
+
+    // 从 opencode.json 提供商中统计
+    if (config.provider) {
+      for (const provider of Object.values(config.provider)) {
+        const p = provider as { models?: Record<string, unknown> };
+        if (p.models) {
+          count += Object.keys(p.models).length;
+        }
+      }
+    }
+
+    // 已知模型的提供商（opencode 有 5 个内置模型）
+    const hasOpencode = config.provider?.opencode ||
+      await fsPromises.readFile(getAuthPath(), 'utf-8').then(
+        raw => JSON.parse(raw)['agnes-ai'] ? true : false,
+        () => false
+      );
+    if (hasOpencode && (!config.provider?.opencode || !config.provider.opencode.models)) {
+      count += 5; // opencode 的 5 个内置模型
+    }
+
+    return count;
+  }
+
+  // ============================================================
+  // 辅助方法：扫描 skills/ 目录获取技能数量
+  // ============================================================
+  private async countSkills(): Promise<number> {
+    try {
+      const skillsDir = getSkillsDir();
+      const entries = await fsPromises.readdir(skillsDir, { withFileTypes: true });
+      let count = 0;
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          try {
+            await fsPromises.access(path.join(skillsDir, entry.name, 'SKILL.md'));
+            count++;
+          } catch {
+            // 目录中没有 SKILL.md，不计入
+          }
+        }
+      }
+      return count;
+    } catch {
+      return 0;
+    }
   }
 
   // ============================================================

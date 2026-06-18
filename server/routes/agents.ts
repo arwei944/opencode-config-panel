@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import { agentService } from '../services/agentService';
+import { configService } from '../services/configService';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -13,7 +14,8 @@ const router = Router();
 router.get('/', async (_req, res, next) => {
   try {
     const agents = await agentService.list();
-    res.json({ success: true, data: { agents } });
+    const config = await configService.getConfig();
+    res.json({ success: true, data: { agents, defaultAgent: config.default_agent || null } });
   } catch (err) {
     next(err);
   }

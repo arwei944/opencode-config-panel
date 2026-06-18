@@ -1,0 +1,243 @@
+{
+  "schema": "https://opencode.ai/config.json",
+  "default_agent": "senior-developer",
+  "theme": "dark",
+  "logLevel": "INFO",
+  "shell": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+  "model": "openai/gpt-4o",
+  "small_model": "openai/gpt-4o-mini",
+  "username": "测试用户",
+  "snapshot": true,
+  "autoupdate": "notify",
+  "layout": "auto",
+
+  "provider": {
+    "openai": {
+      "type": "openai",
+      "apiKey": "sk-test-openai",
+      "options": { "baseURL": "https://api.openai.com/v1" },
+      "models": {
+        "gpt-4o": { "id": "gpt-4o", "name": "GPT-4o", "context": 128000 },
+        "gpt-4o-mini": { "id": "gpt-4o-mini", "name": "GPT-4o Mini", "context": 128000 },
+        "o1": { "id": "o1", "name": "O1", "context": 200000 }
+      }
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "apiKey": "sk-test-anthropic",
+      "options": { "baseURL": "https://api.anthropic.com/v1" },
+      "models": {
+        "claude-sonnet-4": { "id": "claude-sonnet-4", "name": "Claude Sonnet 4", "context": 200000 },
+        "claude-haiku-3": { "id": "claude-haiku-3", "name": "Claude Haiku 3", "context": 200000 }
+      }
+    },
+    "google": {
+      "type": "google",
+      "apiKey": "sk-test-google",
+      "options": { "baseURL": "https://generativelanguage.googleapis.com/v1beta" },
+      "models": {
+        "gemini-2.5-pro": { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "context": 1048576 },
+        "gemini-2.5-flash": { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "context": 1048576 }
+      }
+    },
+    "deepseek": {
+      "type": "openai",
+      "apiKey": "sk-test-deepseek",
+      "options": { "baseURL": "https://api.deepseek.com/v1" },
+      "models": {
+        "deepseek-v3": { "id": "deepseek-v3", "name": "DeepSeek V3", "context": 65536 },
+        "deepseek-r1": { "id": "deepseek-r1", "name": "DeepSeek R1", "context": 65536 }
+      }
+    }
+  },
+
+  "agent": {
+    "senior-developer": {
+      "mode": "primary",
+      "description": "资深开发者，负责核心编码任务",
+      "model": "openai/gpt-4o"
+    },
+    "code-reviewer": {
+      "mode": "subagent",
+      "description": "代码审查员，审查代码质量和安全",
+      "model": "anthropic/claude-sonnet-4"
+    },
+    "document-writer": {
+      "mode": "subagent",
+      "description": "文档编写专家，生成技术文档",
+      "model": "google/gemini-2.5-pro"
+    },
+    "test-engineer": {
+      "mode": "subagent",
+      "description": "测试工程师，编写和执行测试",
+      "model": "openai/gpt-4o-mini",
+      "tools": { "bash": true, "read": true, "grep": true }
+    },
+    "data-analyst": {
+      "mode": "subagent",
+      "description": "数据分析师，处理和分析数据",
+      "model": "deepseek/deepseek-v3"
+    }
+  },
+
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    },
+    "github": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@openai/mcp-github"],
+      "env": { "GITHUB_TOKEN": "ghp_test" }
+    },
+    "filesystem": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Projects"]
+    },
+    "supabase": {
+      "type": "remote",
+      "url": "https://api.supabase.com/mcp/v1",
+      "headers": { "Authorization": "Bearer test-key" }
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    }
+  },
+
+  "tools": {
+    "bash": true,
+    "webfetch": true,
+    "websearch": true,
+    "write": false,
+    "glob": true,
+    "grep": true,
+    "task": true
+  },
+
+  "plugin": [
+    "opencode-plugin-eslint",
+    "opencode-plugin-prettier",
+    "opencode-plugin-docker",
+    ["opencode-plugin-custom", { "port": 8080, "debug": true }]
+  ],
+
+  "experimental": {
+    "batch_tool": true,
+    "chatMaxRetries": 3,
+    "mcp_timeout": 60000,
+    "continue_loop_on_deny": false,
+    "disable_paste_summary": false,
+    "openTelemetry": false,
+    "primary_tools": ["read", "edit", "bash", "task", "glob", "grep"],
+    "hook": {
+      "file_edited": {
+        ".js": ["npx eslint --fix __FILE__"],
+        ".ts": ["npx eslint --fix __FILE__", "npx prettier --write __FILE__"],
+        ".tsx": ["npx eslint --fix __FILE__", "npx prettier --write __FILE__"],
+        ".css": ["npx prettier --write __FILE__"],
+        ".md": ["npx markdownlint --fix __FILE__"]
+      },
+      "session_completed": ["echo '会话完成'"],
+      "tool_executed": {
+        "bash": ["echo 'bash 命令已执行'"]
+      }
+    }
+  },
+
+  "keybinds": {
+    "input.submit": "Enter",
+    "input.newline": "Shift+Enter",
+    "input.cancel": "Escape",
+    "panel.toggle": "Ctrl+`",
+    "sidebar.toggle": "Ctrl+B",
+    "search.toggle": "Ctrl+F",
+    "chat.new": "Ctrl+N",
+    "zoom.in": "Ctrl+=",
+    "zoom.out": "Ctrl+-",
+    "zoom.reset": "Ctrl+0",
+    "terminal.new": "Ctrl+Shift+`",
+    "file.switcher": "Ctrl+P",
+    "command.palette": "Ctrl+Shift+P"
+  },
+
+  "command": {
+    "build": { "template": "npm run build" },
+    "test": { "template": "npm test" },
+    "lint": { "template": "npm run lint" },
+    "deploy": { "template": "npm run deploy -- --env {env}" },
+    "git-commit": { "template": "git add -A && git commit -m '{message}'" },
+    "git-push": { "template": "git push origin {branch}" }
+  },
+
+  "instructions": [
+    "AGENTS.md",
+    "docs/CODING.md",
+    "CONTRIBUTING.md"
+  ],
+
+  "permission": {
+    "read": "allow",
+    "edit": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "bash": "ask",
+    "webfetch": "ask",
+    "websearch": "deny",
+    "task": "allow",
+    "skill": {
+      "chinese-only": "allow",
+      "test-skill": "allow"
+    }
+  },
+
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "tail_turns": 50
+  },
+
+  "attachment": {
+    "image": {
+      "auto_resize": true,
+      "max_width": 2048
+    }
+  },
+
+  "tool_output": {
+    "max_lines": 500,
+    "max_bytes": 102400
+  },
+
+  "server": {
+    "port": 3456,
+    "hostname": "127.0.0.1",
+    "mdns": false
+  },
+
+  "reference": {
+    "typescript": { "path": "https://www.typescriptlang.org/docs/" },
+    "react": { "path": "https://react.dev/reference/react" }
+  },
+
+  "formatter": {
+    "**/*.{ts,tsx}": { "command": "prettier", "options": { "parser": "typescript" } },
+    "**/*.css": { "command": "prettier", "options": { "parser": "css" } }
+  },
+
+  "lsp": {
+    "typescript": { "command": "typescript-language-server", "args": ["--stdio"] },
+    "eslint": { "command": "vscode-eslint-language-server", "args": ["--stdio"] }
+  },
+
+  "watcher": { "ignore": ["node_modules", ".git", "dist"] },
+
+  "tui": {
+    "theme": "catppuccin-mocha",
+    "show_hints": true,
+    "auto_suggest": true
+  }
+}

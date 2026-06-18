@@ -4,13 +4,18 @@
   "private": true,
   "description": "opencode 可视化配置面板",
   "type": "module",
+  "bin": {
+    "opencode-config": "./scripts/opencode-config.mjs"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "cli": "node scripts/opencode-config.mjs",
+    "config": "node scripts/opencode-config.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

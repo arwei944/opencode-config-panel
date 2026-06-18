@@ -11,6 +11,42 @@ import { AppError } from '../middleware/errorHandler';
 const router = Router();
 
 // ============================================================
+// 智能探测
+// ============================================================
+
+/** POST /api/providers/detect — 智能探测提供商（URL + API → 自动识别类型+拉取模型） */
+router.post('/detect', async (req, res, next) => {
+  try {
+    const { baseURL, apiKey } = req.body;
+    if (!baseURL) {
+      throw new AppError(400, 'VALIDATION_ERROR', '请提供 baseURL');
+    }
+    const result = await providerService.detect(baseURL, apiKey);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/providers/smart-add — 智能添加（探测 + 直接写入配置） */
+router.post('/smart-add', async (req, res, next) => {
+  try {
+    const { baseURL, apiKey } = req.body;
+    if (!baseURL) {
+      throw new AppError(400, 'VALIDATION_ERROR', '请提供 baseURL');
+    }
+    const result = await providerService.smartAdd(baseURL, apiKey);
+    res.status(201).json({
+      success: true,
+      data: result,
+      message: `提供商 "${result.name}" 已自动创建，检测到 ${Object.keys(result.config.models || {}).length} 个模型`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
 // 提供商 CRUD
 // ============================================================
 

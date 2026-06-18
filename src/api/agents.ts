@@ -17,6 +17,7 @@ export interface AgentInfo {
 /** 代理列表响应 */
 interface AgentsListResponse {
   agents: AgentInfo[];
+  defaultAgent?: string | null;
 }
 
 /** 文件内容响应 */
