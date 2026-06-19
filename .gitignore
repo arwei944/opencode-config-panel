@@ -28,3 +28,12 @@ Thumbs.db
 # 临时文件
 tmp/
 temp/
+
+# 打包产物
+*.zip
+*.tar.gz
+*.tgz
+
+# 测试残留
+--redact
+--*
