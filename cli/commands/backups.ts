@@ -107,7 +107,11 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
       toDelete = backups.filter(b => new Date(b.timestamp || 0) < keepAfter!);
     }
 
-    if (toDelete.length === 0) { ctx.term.ok('无需清理'); return; }
+    if (toDelete.length === 0) {
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.cleanup', kept: keepCount || keepAfter?.toISOString(), toDelete: 0, ids: [] });
+      else ctx.term.ok('无需清理');
+      return;
+    }
 
     if (ctx.options.dryRun) {
       for (const b of toDelete) ctx.term.info(`[DRY-RUN] 将删除: ${b.id}`);

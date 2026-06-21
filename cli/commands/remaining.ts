@@ -1116,18 +1116,19 @@ export const commandCustomHandler: CommandHandler = async (args, ctx) => {
     return;
   }
 
-  if (sub === 'remove') {
-    const name = args[1];
-    if (!name) { ctx.term.err('用法: command remove <名称>'); return; }
-     if (!commands[name]) { ctx.term.err(`命令 "${name}" 不存在`); return; }
+   if (sub === 'remove') {
+     const name = args[1];
+     if (!name) { ctx.term.err('用法: command remove <名称>'); return; }
+     // dry-run 不需要检查命令是否存在
      if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除命令: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'command.remove', name, dryRun: true }); return; }
+     if (!commands[name]) { ctx.term.err(`命令 "${name}" 不存在`); return; }
      delete commands[name];
      await ctx.configPort.write({ ...config, commands } as never);
      ctx.term.ok(`已删除命令: ${name}`);
-     if (!ctx.options.dryRun) await ctx.audit.append('command.remove', { name });
+     await ctx.audit.append('command.remove', { name });
      if (ctx.options.json) ctx.term.jsonOut({ action: 'command.remove', name });
      return;
-  }
+   }
 
   if (sub === 'edit') {
     const name = args[1];
