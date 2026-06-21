@@ -1336,9 +1336,70 @@ export const uiHandler: CommandHandler = async (_args, ctx) => {
 // ============================================================
 // Self Update
 // ============================================================
-export const selfUpdateHandler: CommandHandler = async (_args, ctx) => {
+export const selfUpdateHandler: CommandHandler = async (args, ctx) => {
   const pkgName = 'opencode-config-panel';
   const { execSync } = await import('node:child_process');
+
+  // 解析参数
+  const { flags } = parseFlags(args, {
+    check: { type: 'boolean', alias: 'c' },
+    auto: { type: 'boolean', alias: 'a' },
+    cron: { type: 'string', alias: 'r' },
+    install: { type: 'boolean', alias: 'i' },
+    quiet: { type: 'boolean', alias: 'q' },
+    'cron-stop': { type: 'boolean', alias: 'x' },
+    'cron-status': { type: 'boolean', alias: 's' },
+  });
+  const checkOnly = flags.check || args.includes('--check') || args.includes('-c');
+  const autoConfirm = flags.auto || args.includes('--auto') || args.includes('-a') || ctx.options.yes;
+  const cronInterval = flags.cron as string | undefined;
+  const forceInstall = flags.install || args.includes('--install') || args.includes('-i');
+  const isQuiet = flags.quiet || args.includes('--quiet') || args.includes('-q');
+  const cronStop = flags['cron-stop'] || args.includes('--cron-stop') || args.includes('-x');
+  const cronStatus = flags['cron-status'] || args.includes('--cron-status') || args.includes('-s');
+
+  // ── 静默后台模式（cron 或 --quiet） ──────────────────
+  const quietMode = isQuiet || !!cronInterval;
+
+  // ── cron-stop: 停止后台自更新进程 ────────────────────
+  if (cronStop) {
+    const pidFile = path.join(os.homedir(), '.config', 'opencode', 'self-update.pid');
+    try {
+      const raw = await ctx.fs.readFile(pidFile);
+      const pid = parseInt(raw.trim(), 10);
+      if (pid) {
+        process.kill(pid, 'SIGTERM');
+        await ctx.fs.deleteFile(pidFile);
+        ctx.term.ok(`已停止自更新后台进程 (PID ${pid})`);
+        if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update.cron.stop', pid });
+      } else {
+        ctx.term.warn('PID 文件无效');
+      }
+    } catch {
+      ctx.term.warn('未找到后台进程或 PID 文件');
+    }
+    return;
+  }
+
+  // ── cron-status: 查看后台自更新状态 ──────────────────
+  if (cronStatus) {
+    const pidFile = path.join(os.homedir(), '.config', 'opencode', 'self-update.pid');
+    try {
+      const raw = await ctx.fs.readFile(pidFile);
+      const pid = parseInt(raw.trim(), 10);
+      if (pid) {
+        try { process.kill(pid, 0); ctx.term.ok(`自更新后台运行中 (PID ${pid})`); if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update.cron.status', running: true, pid }); }
+        catch { ctx.term.warn(`PID ${pid} 文件存在但进程已退出`); if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update.cron.status', running: false, pid }); }
+      } else {
+        ctx.term.raw('后台进程未运行');
+        if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update.cron.status', running: false });
+      }
+    } catch {
+      ctx.term.raw('后台进程未运行');
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update.cron.status', running: false });
+    }
+    return;
+  }
 
   // 读取本地版本
   let currentVersion = '0.0.0';
@@ -1351,8 +1412,12 @@ export const selfUpdateHandler: CommandHandler = async (_args, ctx) => {
   } catch { /* ignore */ }
 
   if (ctx.options.dryRun) {
-    ctx.term.info(`[DRY-RUN] 将检查 ${pkgName} 更新 (当前: ${currentVersion})`);
-    if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update', current: currentVersion, dryRun: true });
+    if (quietMode) {
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update', current: currentVersion, dryRun: true, cron: cronInterval || null });
+    } else {
+      ctx.term.info(`[DRY-RUN] 将检查 ${pkgName} 更新 (当前: ${currentVersion})`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update', current: currentVersion, dryRun: true, checkOnly });
+    }
     return;
   }
 
@@ -1363,17 +1428,83 @@ export const selfUpdateHandler: CommandHandler = async (_args, ctx) => {
     latestVersion = JSON.parse(viewJson);
   } catch { /* ignore network errors */ }
 
+  // 无更新
   if (latestVersion === currentVersion) {
-    ctx.term.ok(`已是最新版本: ${currentVersion}`);
+    if (!quietMode) ctx.term.ok(`已是最新版本: ${currentVersion}`);
     if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update', current: currentVersion, latest: latestVersion, updated: false });
     return;
   }
 
-  ctx.term.info(`发现新版本: ${currentVersion} → ${latestVersion}`);
-  if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update', current: currentVersion, latest: latestVersion, updated: false });
+  // 仅检查模式
+  if (checkOnly) {
+    if (!quietMode) ctx.term.info(`发现新版本: ${currentVersion} → ${latestVersion}`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update', current: currentVersion, latest: latestVersion, checkOnly: true, updateAvailable: true });
+    return;
+  }
 
-  // 实际安装
-  if (!ctx.options.yes) {
+  // cron 后台模式：静默输出，不交互
+  if (cronInterval) {
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update.cron', current: currentVersion, latest: latestVersion, interval: cronInterval });
+    // 解析间隔
+    const m = cronInterval.match(/^(\d+)([smhd])$/);
+    if (!m) { ctx.term.err(`--cron 格式错误，应为如 1h / 30m / 7d`); return; }
+    const val = parseInt(m[1], 10);
+    const unit = m[2];
+    const ms = unit === 's' ? val * 1000 : unit === 'm' ? val * 60000 : unit === 'h' ? val * 3600000 : val * 86400000;
+
+    // 输出 PID 文件路径供管理使用
+    const pidFile = path.join(os.homedir(), '.config', 'opencode', 'self-update.pid');
+    const { writeFile, mkdir, readFile, deleteFile } = await import('node:fs/promises');
+    const { existsSync } = await import('node:fs');
+    try { await mkdir(path.dirname(pidFile), { recursive: true }); } catch { /* ignore */ }
+
+    if (existsSync(pidFile)) {
+      const existingPid = parseInt((await readFile(pidFile, 'utf-8')).trim(), 10);
+      try { process.kill(existingPid, 0); } catch {
+        // 旧进程已死，清理 stale PID
+        await deleteFile(pidFile).catch(() => {});
+      }
+    }
+
+    // 写 PID
+    await writeFile(pidFile, String(process.pid));
+
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update.cron.start', pid: process.pid, interval: cronInterval });
+
+    // 立即执行一次
+    const doUpdate = async () => {
+      try {
+        const newVer = execSync(`npm view ${pkgName} version --json`, { encoding: 'utf-8' }).trim();
+        if (newVer !== currentVersion) {
+          execSync(`npm install -g ${pkgName}@latest --silent`, { stdio: 'pipe' });
+          currentVersion = newVer;
+          if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update.cron.updated', version: currentVersion });
+        }
+      } catch { /* 网络错误静默 */ }
+    };
+    await doUpdate();
+
+    // 注册 SIGTERM 处理，清理 PID 文件
+    let timer: NodeJS.Timeout | null = null;
+    const onSignal = async () => {
+      if (timer) clearInterval(timer);
+      try { await deleteFile(pidFile); } catch { /* ignore */ }
+      process.exit(0);
+    };
+    process.on('SIGTERM', onSignal);
+    process.on('SIGINT', onSignal);
+
+    timer = setInterval(doUpdate, ms);
+    // 挂起主进程，直到收到终止信号
+    await new Promise(() => {});
+  }
+
+  // 正常模式：发现新版本
+  ctx.term.info(`发现新版本: ${currentVersion} → ${latestVersion}`);
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'self.update', current: currentVersion, latest: latestVersion, checkOnly: false, updateAvailable: true });
+
+  // 确认安装
+  if (!autoConfirm) {
     const ok = await ctx.prompt.confirm(`确认更新到 ${latestVersion}？(y/N) `);
     if (!ok) { ctx.term.raw('已取消'); return; }
   }

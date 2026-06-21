@@ -160,9 +160,16 @@ occ — Opencode 配置管理 CLI 工具
     json set <路径> <值>                  按 JSON 路径设值
     json patch <路径> <{op,value}>        RFC 6902 patch（add/remove/replace/test）
 
-   其他:
-    self update                          自更新（占位）
-    ui                                   启动 Web 控制台（占位）
+    其他:
+     self update [--check] [--auto] [--cron <间隔>] [--quiet]  自更新
+       --check / -c           仅检查更新，不安装
+       --auto / -a / -y       发现更新自动安装（无需确认）
+       --cron <间隔>          后台自动定期检查并更新（如 1h / 24h / 7d）
+       --cron-stop / -x       停止后台自更新进程
+       --cron-status / -s     查看后台自更新状态
+       --quiet / -q           静默模式（仅 JSON 输出）
+       --install / -i         等同于 --auto，强制安装最新版
+     ui                                   启动 Web 控制台（占位）
 
    回归测试:
     npm run test:cli                     运行完整命令回归测试
