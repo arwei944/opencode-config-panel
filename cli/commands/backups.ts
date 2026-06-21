@@ -247,6 +247,15 @@ export const rollbackHandler: CommandHandler = async (args, ctx) => {
   }
 
   // 交互选择
+  if (ctx.options.dryRun) {
+    ctx.term.raw('可选备份:');
+    for (let i = 0; i < Math.min(backups.length, 20); i++) {
+      ctx.term.raw(`  [${i + 1}] ${backups[i].id} (${formatBytes(backups[i].size || 0)})`);
+    }
+    ctx.term.info('[DRY-RUN] 跳过交互选择');
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'rollback', dryRun: true, backups: backups.slice(0, 20).map(b => b.id) });
+    return;
+  }
   ctx.term.raw('可选备份:');
   for (let i = 0; i < Math.min(backups.length, 20); i++) {
     ctx.term.raw(`  [${i + 1}] ${backups[i].id} (${formatBytes(backups[i].size || 0)})`);
@@ -257,6 +266,7 @@ export const rollbackHandler: CommandHandler = async (args, ctx) => {
   await ctx.services.config.restoreBackup(backups[idx].id);
   ctx.term.ok(`已回滚到: ${backups[idx].id}`);
   if (!ctx.options.dryRun) await ctx.audit.append('rollback.restore', { target: backups[idx].id });
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'rollback', target: backups[idx].id });
 };
 
 /** diff 命令 */
@@ -271,6 +281,7 @@ export const diffHandler: CommandHandler = async (args, ctx) => {
     const raw = await ctx.fs.readFile(fileA);
     const imported = JSON.parse(raw);
     const changes = diffObject(config as Record<string, unknown>, imported as Record<string, unknown>);
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'diff.import', file: fileA, changes, count: changes.length }); return; }
     if (changes.length === 0) { ctx.term.ok('无差异'); return; }
     ctx.term.raw(`与 ${fileA} 差异: ${changes.length} 项`);
     for (const c of changes.slice(0, 50)) {
@@ -286,6 +297,7 @@ export const diffHandler: CommandHandler = async (args, ctx) => {
     const config = await ctx.configPort.read();
     const backupConfig = await ctx.backupPort.read(fileA);
     const changes = diffObject(config as Record<string, unknown>, backupConfig as Record<string, unknown>);
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'diff.rollback', backup: fileA, changes, count: changes.length }); return; }
     if (changes.length === 0) { ctx.term.ok('无差异'); return; }
     ctx.term.raw(`与备份 ${fileA} 差异: ${changes.length} 项`);
     for (const c of changes.slice(0, 50)) {
@@ -302,6 +314,7 @@ export const diffHandler: CommandHandler = async (args, ctx) => {
   const objA = JSON.parse(rawA);
   const objB = JSON.parse(rawB);
   const changes = diffObject(objA, objB);
+  if (ctx.options.json) { ctx.term.jsonOut({ action: 'diff', fileA, fileB, changes, count: changes.length }); return; }
   if (changes.length === 0) { ctx.term.ok('无差异'); return; }
   ctx.term.raw(`差异 (${fileA} ↔ ${fileB}): ${changes.length} 项`);
   for (const c of changes.slice(0, 50)) {

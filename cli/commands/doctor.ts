@@ -112,12 +112,18 @@ export const doctorHandler: CommandHandler = async (args, ctx) => {
     if (Object.keys(config.skills as Record<string, unknown> || {}).length === 0) fixed.push('skills 为空，未修改');
     if (Object.keys(config.tools as Record<string, unknown> || {}).length === 0) fixed.push('tools 为空，未修改');
 
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将修复 ${fixed.length} 项:`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'doctor.fix', dryRun: true, fixed, issues, warnings, passed });
+      return;
+    }
+
     if (!ctx.options.dryRun && fixed.length > 0) {
       await ctx.configPort.write(config);
     }
 
     if (ctx.options.json) {
-      ctx.term.jsonOut({ action: 'doctor.fix', fix, fixed, issues, warnings, passed });
+      ctx.term.jsonOut({ action: 'doctor.fix', dryRun: false, fixed, issues, warnings, passed });
       return;
     }
     for (const line of fixed) ctx.term.info(`[FIX] ${line}`);

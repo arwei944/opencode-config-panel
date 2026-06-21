@@ -103,6 +103,7 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
     if (!name) { ctx.term.err('用法: template export <名称> [目标路径]'); return; }
     const templatePath = path.join(TEMPLATES_DIR, `${name}.json`);
     if (!await ctx.fs.exists(templatePath)) { ctx.term.err(`模板 "${name}" 不存在`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将导出模板: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'template.export', name, dryRun: true, exportPath: exportPath || null }); return; }
     const content = await ctx.fs.readFile(templatePath);
     if (exportPath) {
       await ctx.fs.writeFile(exportPath, content);
