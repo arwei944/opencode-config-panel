@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 使用 Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: TypeScript 前端类型检查
+        run: npx tsc --noEmit
+
+      - name: TypeScript 后端类型检查
+        run: npx tsc -p tsconfig.server.json --noEmit
+
+      - name: 单元测试 + 集成测试
+        run: npx vitest run --reporter=verbose
+
+      - name: Vite 生产构建
+        run: npx vite build
+
+      - name: CLI 回归测试
+        run: node scripts/test-cli.mjs

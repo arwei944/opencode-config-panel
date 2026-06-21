@@ -16,10 +16,16 @@
     "lint": "tsc --noEmit",
     "cli": "tsx scripts/occ.ts",
     "occ": "tsx scripts/occ.ts",
-    "test:cli": "node scripts/test-cli.mjs",
+    "start": "tsx server/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:cli": "node scripts/test-cli.mjs",
+    "test:all": "npm run test && npm run test:cli",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"core/**/*.ts\" \"cli/**/*.ts\" \"shared/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"server/**/*.ts\" \"core/**/*.ts\" \"cli/**/*.ts\" \"shared/**/*.ts\" \"tests/**/*.ts\"",
+    "clean": "rm -rf dist coverage",
+    "validate": "npm run lint && npm run test:all && npm run build"
   },
   "dependencies": {
     "ajv": "^8.17.1",

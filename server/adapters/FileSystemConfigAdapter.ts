@@ -10,7 +10,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { IConfigPort } from '../../core/ports';
 import type { OpenCodeConfig, ConfigSummary } from '../../shared/atoms';
-import { deepClone } from '../../server/utils/deepMerge';
+import { deepClone } from '../../shared/utils/deepMerge';
 
 /** 文件系统配置适配器构造参数 */
 export interface FileSystemConfigAdapterOptions {
