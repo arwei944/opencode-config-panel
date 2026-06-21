@@ -4,33 +4,33 @@
  */
 
 import { configService } from './configService';
-import type { ToolInfo, ToolCategory } from '../types';
+import type { ToolInfo, ToolCategory, OpenCodeConfig } from '../types';
 
 /** 内置工具定义 */
 const BUILTIN_TOOLS: Omit<ToolInfo, 'enabled' | 'agentOverrides'>[] = [
   // 文件操作
-  { id: 'read', name: 'Read', description: '读取文件内容', category: '文件操作', builtin: true, source: null },
-  { id: 'edit', name: 'Edit', description: '编辑文件内容', category: '文件操作', builtin: true, source: null },
-  { id: 'write', name: 'Write', description: '写入文件', category: '文件操作', builtin: true, source: null },
-  { id: 'glob', name: 'Glob', description: '文件模式匹配查找', category: '文件操作', builtin: true, source: null },
-  { id: 'grep', name: 'Grep', description: '文件内容搜索', category: '文件操作', builtin: true, source: null },
+  { id: 'read', name: 'Read', description: '读取文件内容', category: '文件操作', builtin: true, source: undefined },
+  { id: 'edit', name: 'Edit', description: '编辑文件内容', category: '文件操作', builtin: true, source: undefined },
+  { id: 'write', name: 'Write', description: '写入文件', category: '文件操作', builtin: true, source: undefined },
+  { id: 'glob', name: 'Glob', description: '文件模式匹配查找', category: '文件操作', builtin: true, source: undefined },
+  { id: 'grep', name: 'Grep', description: '文件内容搜索', category: '文件操作', builtin: true, source: undefined },
 
   // 执行工具
-  { id: 'bash', name: 'Bash', description: '执行 shell 命令', category: '执行工具', builtin: true, source: null },
+  { id: 'bash', name: 'Bash', description: '执行 shell 命令', category: '执行工具', builtin: true, source: undefined },
 
   // 网络工具
-  { id: 'webfetch', name: 'Web Fetch', description: '获取 URL 内容', category: '网络工具', builtin: true, source: null },
-  { id: 'websearch', name: 'Web Search', description: '搜索网络信息', category: '网络工具', builtin: true, source: null },
+  { id: 'webfetch', name: 'Web Fetch', description: '获取 URL 内容', category: '网络工具', builtin: true, source: undefined },
+  { id: 'websearch', name: 'Web Search', description: '搜索网络信息', category: '网络工具', builtin: true, source: undefined },
 
   // 代理工具
-  { id: 'task', name: 'Task', description: '启动子代理执行任务', category: '代理工具', builtin: true, source: null },
+  { id: 'task', name: 'Task', description: '启动子代理执行任务', category: '代理工具', builtin: true, source: undefined },
 
   // 工具链
-  { id: 'todowrite', name: 'Todo Write', description: '创建和管理任务列表', category: '工具链', builtin: true, source: null },
-  { id: 'skill', name: 'Skill', description: '加载技能文件', category: '工具链', builtin: true, source: null },
+  { id: 'todowrite', name: 'Todo Write', description: '创建和管理任务列表', category: '工具链', builtin: true, source: undefined },
+  { id: 'skill', name: 'Skill', description: '加载技能文件', category: '工具链', builtin: true, source: undefined },
 
   // 其他
-  { id: 'question', name: 'Question', description: '向用户提问', category: '工具链', builtin: true, source: null },
+  { id: 'question', name: 'Question', description: '向用户提问', category: '工具链', builtin: true, source: undefined },
 ];
 
 class ToolService {
@@ -58,8 +58,8 @@ class ToolService {
     }));
 
     // 添加自定义工具（从 provider 插件中检测）
-    const customTools = this.detectCustomTools(config);
-    tools.push(...customTools);
+    const customTools = this.detectCustomTools(config as OpenCodeConfig);
+    tools.push(...customTools.map(t => ({ ...t, enabled: true, agentOverrides: {} })));
 
     // 合并代理覆盖（从 agent 配置中读取工具覆盖）
     if (config.agent) {
@@ -156,11 +156,11 @@ class ToolService {
   // ============================================================
   // 辅助方法：检测自定义工具
   // ============================================================
-  private detectCustomTools(config: Record<string, unknown>): Omit<ToolInfo, 'enabled' | 'agentOverrides'>[] {
+  private detectCustomTools(config: OpenCodeConfig): Omit<ToolInfo, 'enabled' | 'agentOverrides'>[] {
     const customTools: Omit<ToolInfo, 'enabled' | 'agentOverrides'>[] = [];
 
     // 从 provider 中检测插件提供的工具
-    const providers = (config as { provider?: Record<string, { npm?: string; api?: string }> }).provider;
+    const providers = config.provider;
     if (providers) {
       for (const [name, provider] of Object.entries(providers)) {
         if (provider.npm || provider.api) {

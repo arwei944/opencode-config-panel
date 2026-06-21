@@ -18,9 +18,10 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@shared/*": ["./shared/*"]
     },
     "baseUrl": "."
   },
-  "include": ["src"]
+  "include": ["src", "shared"]
 }

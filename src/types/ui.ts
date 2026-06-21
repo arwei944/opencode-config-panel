@@ -1,32 +1,11 @@
 /**
+ * ============================================================
  * 前端 UI 状态类型定义
+ * 兼容层：从原子层导入 + 本地特有类型
+ * ============================================================
  */
 
-/** 导航区域标识 */
-export type NavSection =
-  | '仪表盘'
-  | '提供商管理'
-  | '代理管理'
-  | '工具管理'
-  | '技能管理'
-  | 'MCP 服务器'
-  | '插件管理'
-  | '权限配置'
-  | '快捷键绑定'
-  | '自定义命令'
-  | '事件钩子'
-  | '指令文件'
-  | '高级设置'
-  | 'JSON 编辑器';
-
-/** 导航项定义 */
-export interface NavItem {
-  id: NavSection;
-  label: string;
-  icon: string;
-  path: string;
-  badge?: number | string;
-}
+import type { NavSection } from '@shared/atoms';
 
 /** 主题模式 */
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -64,3 +43,6 @@ export interface SortConfig {
   field: string;
   direction: 'asc' | 'desc';
 }
+
+// 从原子层重新导出
+export type { NavSection, NavItem } from '@shared/atoms';

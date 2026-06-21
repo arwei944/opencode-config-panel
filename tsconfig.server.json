@@ -13,11 +13,12 @@
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "outDir": "./dist-server",
-    "rootDir": "./server",
+    "rootDir": ".",
     "paths": {
-      "@server/*": ["./server/*"]
+      "@server/*": ["./server/*"],
+      "@shared/*": ["./shared/*"]
     },
     "baseUrl": "."
   },
-  "include": ["server"]
+  "include": ["server", "shared", "core", "cli"]
 }

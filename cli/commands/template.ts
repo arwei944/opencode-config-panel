@@ -1,0 +1,266 @@
+/**
+ * Commands: template list/save/apply/show/delete/export/import
+ * 模板管理
+ */
+
+import path from 'node:path';
+import os from 'node:os';
+import type { CommandHandler } from '../types';
+import { parseFlags, topKeys } from '../utils';
+
+const TEMPLATES_DIR = path.join(os.homedir(), '.config', 'opencode', 'templates');
+const AUDIT_LOG_PATH = path.join(os.homedir(), '.config', 'opencode', '.audit.log');
+
+async function appendAuditLog(ctx: import('../types').CliContext, action: string, detail: Record<string, unknown>): Promise<void> {
+  if (ctx.options.dryRun) return;
+  const entry = { time: new Date().toISOString(), action, detail };
+  try {
+    const existing = JSON.parse(await ctx.fs.readFile(AUDIT_LOG_PATH)) as unknown[];
+    existing.push(entry);
+    await ctx.fs.writeFile(AUDIT_LOG_PATH, JSON.stringify(existing, null, 2));
+  } catch {
+    await ctx.fs.writeFile(AUDIT_LOG_PATH, JSON.stringify([entry], null, 2));
+  }
+}
+
+export const templateHandler: CommandHandler = async (args, ctx) => {
+  const sub = args[0];
+
+  if (!sub || sub === 'list') {
+    await ctx.fs.ensureDir(TEMPLATES_DIR);
+    const entries = await ctx.fs.readDir(TEMPLATES_DIR);
+    const names = entries.filter(e => e.isFile && e.name.endsWith('.json')).map(e => e.name.replace(/\.json$/, ''));
+    if (names.length === 0) { ctx.term.raw('(无模板)'); return; }
+    ctx.term.raw(`模板 (${names.length}):`);
+    for (const n of names) ctx.term.raw(`  ${n}`);
+    return;
+  }
+
+  if (sub === 'save') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: template save <名称>'); return; }
+    if (!/^[a-z0-9-]{2,32}$/.test(name)) { ctx.term.err('模板名称必须为小写字母、数字、连字符，2-32 字符'); return; }
+
+    const config = await ctx.configPort.read();
+    const existing = await (async () => {
+      try { return JSON.parse(await ctx.fs.readFile(path.join(TEMPLATES_DIR, `${name}.json`))); } catch { return null; }
+    })();
+
+    if (ctx.options.dryRun) {
+      const overwrite = existing ? ' (overwrite=true)' : '';
+      ctx.term.info(`[DRY-RUN] 将保存模板: ${name}${overwrite}`);
+      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, name, overwrite: !!existing, topKeys: topKeys(config as Record<string, unknown>) });
+      return;
+    }
+
+    await ctx.fs.ensureDir(TEMPLATES_DIR);
+    await ctx.fs.writeFile(path.join(TEMPLATES_DIR, `${name}.json`), JSON.stringify(config, null, 2));
+    if (existing) ctx.term.info(`模板 "${name}" 已覆盖`);
+    else ctx.term.ok(`模板 "${name}" 已保存`);
+    await appendAuditLog(ctx, 'template.save', { name, overwrite: !!existing });
+    return;
+  }
+
+  if (sub === 'apply') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: template apply <名称>'); return; }
+    const templatePath = path.join(TEMPLATES_DIR, `${name}.json`);
+    if (!await ctx.fs.exists(templatePath)) { ctx.term.err(`模板 "${name}" 不存在`); return; }
+    const template = JSON.parse(await ctx.fs.readFile(templatePath));
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将应用模板: ${name}`); return; }
+    await ctx.configPort.write(template);
+    ctx.term.ok(`已应用模板: ${name}`);
+    await appendAuditLog(ctx, 'template.apply', { name });
+    return;
+  }
+
+  if (sub === 'show') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: template show <名称>'); return; }
+    const templatePath = path.join(TEMPLATES_DIR, `${name}.json`);
+    if (!await ctx.fs.exists(templatePath)) { ctx.term.err(`模板 "${name}" 不存在`); return; }
+    const content = await ctx.fs.readFile(templatePath);
+    ctx.term.out(content);
+    return;
+  }
+
+  if (sub === 'delete') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: template delete <名称>'); return; }
+    const templatePath = path.join(TEMPLATES_DIR, `${name}.json`);
+    if (!await ctx.fs.exists(templatePath)) { ctx.term.err(`模板 "${name}" 不存在`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除模板: ${name}`); return; }
+    if (!ctx.options.yes) {
+      const ok = await ctx.prompt.confirm(`确认删除模板 "${name}"？(y/N) `);
+      if (!ok) { ctx.term.raw('已取消'); return; }
+    }
+    await ctx.fs.deleteFile(templatePath);
+    ctx.term.ok(`模板 "${name}" 已删除`);
+    await appendAuditLog(ctx, 'template.delete', { name });
+    return;
+  }
+
+  if (sub === 'export') {
+    const name = args[1];
+    const exportPath = args[2];
+    if (!name) { ctx.term.err('用法: template export <名称> [目标路径]'); return; }
+    const templatePath = path.join(TEMPLATES_DIR, `${name}.json`);
+    if (!await ctx.fs.exists(templatePath)) { ctx.term.err(`模板 "${name}" 不存在`); return; }
+    const content = await ctx.fs.readFile(templatePath);
+    if (exportPath) {
+      await ctx.fs.writeFile(exportPath, content);
+      ctx.term.ok(`已导出到 ${exportPath}`);
+    } else {
+      ctx.term.out(content);
+    }
+    return;
+  }
+
+  if (sub === 'import') {
+    const importPath = args[1];
+    if (!importPath) { ctx.term.err('用法: template import <文件路径>'); return; }
+    const raw = await ctx.fs.readFile(importPath);
+    const name = path.basename(importPath, '.json');
+    await ctx.fs.ensureDir(TEMPLATES_DIR);
+    await ctx.fs.writeFile(path.join(TEMPLATES_DIR, `${name}.json`), raw);
+    ctx.term.ok(`模板已导入: ${name}`);
+    return;
+  }
+
+  ctx.term.err('用法: template <list|save|apply|show|delete|export|import> [参数]');
+};
+
+/** profile 命令 */
+export const profileHandler: CommandHandler = async (args, ctx) => {
+  const sub = args[0];
+  const PROFILES_DIR = path.join(os.homedir(), '.config', 'opencode', 'profiles');
+  const ACTIVE_PROFILE_PATH = path.join(os.homedir(), '.config', 'opencode', '.active-profile');
+
+  async function getActiveProfileName(): Promise<string | null> {
+    try { return (await ctx.fs.readFile(ACTIVE_PROFILE_PATH)).trim() || null; } catch { return null; }
+  }
+
+  if (!sub || sub === 'list') {
+    await ctx.fs.ensureDir(PROFILES_DIR);
+    const active = await getActiveProfileName();
+    const entries = await ctx.fs.readDir(PROFILES_DIR);
+    const names = entries.filter(e => e.isFile && e.name.endsWith('.json')).map(e => e.name.replace(/\.json$/, ''));
+    if (names.length === 0) { ctx.term.raw('(无 profile)'); return; }
+    ctx.term.raw(`Profiles (${names.length}):${active ? ` [当前: ${active}]` : ''}`);
+    for (const n of names) ctx.term.raw(`  ${n}${n === active ? ' ← 当前' : ''}`);
+    return;
+  }
+
+  if (sub === 'save') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: profile save <名称>'); return; }
+    if (!/^[a-z0-9-]{2,32}$/.test(name)) { ctx.term.err('Profile 名称必须为小写字母、数字、连字符，2-32 字符'); return; }
+
+    const config = await ctx.configPort.read();
+    const existing = await (async () => {
+      try { return JSON.parse(await ctx.fs.readFile(path.join(PROFILES_DIR, `${name}.json`))); } catch { return null; }
+    })();
+
+    if (ctx.options.dryRun) {
+      const overwrite = existing ? ' (overwrite=true)' : '';
+      ctx.term.info(`[DRY-RUN] 将保存 profile: ${name}${overwrite}`);
+      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, name, overwrite: !!existing });
+      return;
+    }
+
+    await ctx.fs.ensureDir(PROFILES_DIR);
+    await ctx.fs.writeFile(path.join(PROFILES_DIR, `${name}.json`), JSON.stringify(config, null, 2));
+    ctx.term.ok(`Profile "${name}" 已保存`);
+    await appendAuditLog(ctx, 'profile.save', { name, overwrite: !!existing });
+    return;
+  }
+
+  if (sub === 'use') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: profile use <名称>'); return; }
+    const profilePath = path.join(PROFILES_DIR, `${name}.json`);
+    if (!await ctx.fs.exists(profilePath)) { ctx.term.err(`Profile "${name}" 不存在`); return; }
+
+    const config = JSON.parse(await ctx.fs.readFile(profilePath));
+
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将切换 profile: ${name}`);
+      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, name, topKeys: topKeys(config as Record<string, unknown>) });
+      return;
+    }
+
+    // 写入 .active-profile
+    await ctx.fs.writeFile(ACTIVE_PROFILE_PATH, name);
+    ctx.term.ok(`已切换到 profile: ${name}`);
+    await appendAuditLog(ctx, 'profile.use', { name });
+    return;
+  }
+
+  if (sub === 'show') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: profile show <名称>'); return; }
+    const profilePath = path.join(PROFILES_DIR, `${name}.json`);
+    if (!await ctx.fs.exists(profilePath)) { ctx.term.err(`Profile "${name}" 不存在`); return; }
+    const content = await ctx.fs.readFile(profilePath);
+    ctx.term.out(content);
+    return;
+  }
+
+  if (sub === 'delete') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: profile delete <名称>'); return; }
+    const profilePath = path.join(PROFILES_DIR, `${name}.json`);
+    if (!await ctx.fs.exists(profilePath)) { ctx.term.err(`Profile "${name}" 不存在`); return; }
+
+    const active = await getActiveProfileName();
+
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将删除 profile: ${name}${name === active ? ' (isActive=true)' : ''}`);
+      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, name, isActive: name === active });
+      return;
+    }
+
+    if (!ctx.options.yes) {
+      const ok = await ctx.prompt.confirm(`确认删除 profile "${name}"？(y/N) `);
+      if (!ok) { ctx.term.raw('已取消'); return; }
+    }
+
+    await ctx.fs.deleteFile(profilePath);
+    ctx.term.ok(`Profile "${name}" 已删除`);
+    if (name === active) {
+      try { await ctx.fs.deleteFile(ACTIVE_PROFILE_PATH); } catch { /* ignore */ }
+      ctx.term.info('当前激活的 profile 已被清除');
+    }
+    await appendAuditLog(ctx, 'profile.delete', { name, wasActive: name === active });
+    return;
+  }
+
+  if (sub === 'export') {
+    const name = args[1];
+    const exportPath = args[2];
+    if (!name) { ctx.term.err('用法: profile export <名称> [目标路径]'); return; }
+    const profilePath = path.join(PROFILES_DIR, `${name}.json`);
+    if (!await ctx.fs.exists(profilePath)) { ctx.term.err(`Profile "${name}" 不存在`); return; }
+    const content = await ctx.fs.readFile(profilePath);
+    if (exportPath) {
+      await ctx.fs.writeFile(exportPath, content);
+      ctx.term.ok(`已导出到 ${exportPath}`);
+    } else {
+      ctx.term.out(content);
+    }
+    return;
+  }
+
+  if (sub === 'import') {
+    const importPath = args[1];
+    if (!importPath) { ctx.term.err('用法: profile import <文件路径>'); return; }
+    const raw = await ctx.fs.readFile(importPath);
+    const name = path.basename(importPath, '.json');
+    await ctx.fs.ensureDir(PROFILES_DIR);
+    await ctx.fs.writeFile(path.join(PROFILES_DIR, `${name}.json`), raw);
+    ctx.term.ok(`Profile 已导入: ${name}`);
+    return;
+  }
+
+  ctx.term.err('用法: profile <list|save|use|show|delete|export|import> [参数]');
+};
