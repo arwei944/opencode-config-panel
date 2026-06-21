@@ -117,14 +117,14 @@ export const doctorHandler: CommandHandler = async (args, ctx) => {
     }
 
     if (ctx.options.json) {
-      ctx.term.jsonOut({ fix, fixed, issues, warnings, passed });
+      ctx.term.jsonOut({ action: 'doctor.fix', fix, fixed, issues, warnings, passed });
       return;
     }
     for (const line of fixed) ctx.term.info(`[FIX] ${line}`);
   }
 
   if (ctx.options.json) {
-    ctx.term.jsonOut({ issues, warnings, passed, summary: { providers: Object.keys(providers).length, agents: Object.keys(agents).length, backups: backupCount, backupSize } });
+    ctx.term.jsonOut({ action: 'doctor', issues, warnings, passed, summary: { providers: Object.keys(providers).length, agents: Object.keys(agents).length, backups: backupCount, backupSize } });
     return;
   }
 

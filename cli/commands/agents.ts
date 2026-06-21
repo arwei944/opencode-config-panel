@@ -44,6 +44,7 @@ export const agentCreateHandler: CommandHandler = async (args, ctx) => {
 
   if (ctx.options.dryRun) {
     ctx.term.info(`[DRY-RUN] 将创建代理: ${name} (${mode})`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.create', name, mode, description, model, dryRun: true });
     return;
   }
 
@@ -61,6 +62,7 @@ export const agentCreateHandler: CommandHandler = async (args, ctx) => {
 
   ctx.term.ok(`已创建代理: ${name} (${mode})`);
   if (!ctx.options.dryRun) await ctx.audit.append('agent.create', { name, mode, description });
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.create', name, mode, description, model });
 };
 
 /** 删除代理 */
@@ -74,6 +76,7 @@ export const agentDeleteHandler: CommandHandler = async (args, ctx) => {
 
   if (ctx.options.dryRun) {
     ctx.term.info(`[DRY-RUN] 将删除代理: ${name}`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.delete', name, dryRun: true });
     return;
   }
 
@@ -85,6 +88,7 @@ export const agentDeleteHandler: CommandHandler = async (args, ctx) => {
 
   ctx.term.ok(`已删除代理: ${name}`);
   if (!ctx.options.dryRun) await ctx.audit.append('agent.delete', { name });
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.delete', name });
 };
 
 /** 更新代理 */
@@ -113,12 +117,15 @@ export const agentUpdateHandler: CommandHandler = async (args, ctx) => {
 
   if (ctx.options.dryRun) {
     ctx.term.info(`[DRY-RUN] 将更新 ${name}: ${JSON.stringify(update)}`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.update', name, updates: update, dryRun: true });
     return;
   }
 
   agents[name] = { ...agents[name], ...update };
   await ctx.configPort.write({ ...config, agent: agents } as never);
   ctx.term.ok(`已更新代理: ${name}`);
+  if (!ctx.options.dryRun) await ctx.audit.append('agent.update', { name, updates: update });
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.update', name, updates: update });
 };
 
 /** 设置代理权限 */
@@ -143,24 +150,32 @@ export const agentSetPermissionHandler: CommandHandler = async (args, ctx) => {
 
   if (ctx.options.dryRun) {
     ctx.term.info(`[DRY-RUN] 将设置 ${name} 权限: ${JSON.stringify(permMap)}`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.set-permission', name, permissions: permMap, dryRun: true });
     return;
   }
 
   agents[name].permission = { ...(agents[name].permission as Record<string, string> || {}), ...permMap };
   await ctx.configPort.write({ ...config, agent: agents } as never);
   ctx.term.ok(`已设置 ${name} 权限: ${Object.keys(permMap).length} 条`);
+  if (!ctx.options.dryRun) await ctx.audit.append('agent.set-permission', { name, permissions: permMap });
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.set-permission', name, permissions: permMap });
 };
 
 /** 代理健康检查 */
 export const agentDoctorHandler: CommandHandler = async (_args, ctx) => {
   const config = await ctx.configPort.read();
-  const agents = (config.agent || {}) as Record<string, { mode?: string; model?: string }>;
+  const agents = config.agent as Record<string, { mode?: string; model?: string }>;
 
   if (Object.keys(agents).length === 0) { ctx.term.warn('没有配置任何代理'); return; }
 
   let issues = 0;
+  const agentChecks: { name: string; hasMode: boolean }[] = [];
   for (const [name, a] of Object.entries(agents)) {
+    const hasMode = !!a.mode;
+    agentChecks.push({ name, hasMode });
     if (!a.mode) { ctx.term.warn(`${name}: 缺少 mode`); issues++; }
   }
   if (issues === 0) ctx.term.ok(`所有 ${Object.keys(agents).length} 个代理正常`);
+
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'agent.doctor', total: Object.keys(agents).length, issues, agents: agentChecks });
 };

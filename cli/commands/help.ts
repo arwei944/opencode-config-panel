@@ -6,6 +6,17 @@
 import type { CommandHandler } from '../types';
 
 export const helpHandler: CommandHandler = async (_args, ctx) => {
+  if (ctx.options.json) {
+    const { getCommandNames, getCommandDef } = await import('../registry');
+    const names = getCommandNames();
+    const commands = names.map(n => {
+      const def = getCommandDef(n);
+      return { name: n, aliases: def?.aliases || [], description: def?.description || '' };
+    });
+    ctx.term.jsonOut({ action: 'help', commands });
+    return;
+  }
+
   ctx.term.raw(`
 occ — Opencode 配置管理 CLI 工具
 

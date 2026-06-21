@@ -19,9 +19,10 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'opencode.json');
 export const logHandler: CommandHandler = async (args, ctx) => {
   const sub = args[0];
   if (sub === 'clear') {
-    if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将清空审计日志'); return; }
+    if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将清空审计日志'); if (ctx.options.json) ctx.term.jsonOut({ action: 'log.clear', dryRun: true }); return; }
     await ctx.audit.clear();
     ctx.term.ok('审计日志已清空');
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'log.clear' });
     return;
   }
 
@@ -59,6 +60,7 @@ export const jsonHandler: CommandHandler = async (args, ctx) => {
         return;
       }
     }
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'json.get', path: jsonPath, value: val }); return; }
     ctx.term.out(JSON.stringify(val, null, 2));
     return;
   }
@@ -86,7 +88,7 @@ export const jsonHandler: CommandHandler = async (args, ctx) => {
 
     if (ctx.options.dryRun) {
       ctx.term.info(`[DRY-RUN] json set ${jsonPath} = ${JSON.stringify(parsedVal)}`);
-      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, key: jsonPath, value: parsedVal });
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'json.set', dryRun: true, path: jsonPath, value: parsedVal });
       return;
     }
 
@@ -120,7 +122,7 @@ export const jsonHandler: CommandHandler = async (args, ctx) => {
 
     if (ctx.options.dryRun) {
       ctx.term.info(`[DRY-RUN] json patch ${jsonPath}: ${patch.op}`);
-      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, key: jsonPath, patch });
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'json.patch', dryRun: true, path: jsonPath, patch });
       return;
     }
 
@@ -415,6 +417,7 @@ export const mcpHandler: CommandHandler = async (args, ctx) => {
 
     if (ctx.options.dryRun) {
       ctx.term.info(`[DRY-RUN] 将添加 MCP: ${name}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'mcp.add', name, dryRun: true });
       return;
     }
 
@@ -444,8 +447,8 @@ export const mcpHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'remove' || sub === 'rm') {
     const name = args[1];
     if (!name) { ctx.term.err('用法: mcp remove <名称>'); return; }
-    if (!mcp[name]) { ctx.term.err(`MCP 服务器 "${name}" 不存在`); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除 MCP: ${name}`); return; }
+     if (!mcp[name]) { ctx.term.err(`MCP 服务器 "${name}" 不存在`); return; }
+     if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除 MCP: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'mcp.remove', name, dryRun: true }); return; }
     delete mcp[name];
     await ctx.configPort.write({ ...config, mcp } as never);
     ctx.term.ok(`已删除 MCP 服务器: ${name}`);
@@ -459,7 +462,7 @@ export const mcpHandler: CommandHandler = async (args, ctx) => {
     if (!name) { ctx.term.err('用法: mcp toggle <名称>'); return; }
     if (!mcp[name]) { ctx.term.err(`MCP 服务器 "${name}" 不存在`); return; }
     const current = mcp[name].enabled !== false;
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将 ${current ? '禁用' : '启用'} MCP: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将 ${current ? '禁用' : '启用'} MCP: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'mcp.toggle', name, enabled: !current, dryRun: true }); return; }
     mcp[name].enabled = !current;
     await ctx.configPort.write({ ...config, mcp } as never);
     ctx.term.ok(`已${current ? '禁用' : '启用'} MCP: ${name}`);
@@ -621,10 +624,12 @@ export const toolHandler: CommandHandler = async (args, ctx) => {
     const tools = (config.tools || {}) as Record<string, boolean>;
     const current = tools[toolName];
     const newVal = current === undefined ? false : !current;
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将切换工具 ${toolName}: ${newVal}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将切换工具 ${toolName}: ${newVal}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'tool.toggle', name: toolName, enabled: newVal, dryRun: true }); return; }
     tools[toolName] = newVal;
     await ctx.configPort.write({ ...config, tools } as never);
     ctx.term.ok(`工具 ${toolName}: ${newVal ? '启用' : '禁用'}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('tool.toggle', { name: toolName, enabled: newVal });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'tool.toggle', name: toolName, enabled: newVal });
     return;
   }
 
@@ -635,18 +640,22 @@ export const toolHandler: CommandHandler = async (args, ctx) => {
     const val = rawVal === 'true' || rawVal === '1';
     const config = await ctx.configPort.read();
     const tools = (config.tools || {}) as Record<string, boolean>;
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置工具 ${toolName} = ${val}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置工具 ${toolName} = ${val}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'tool.set', name: toolName, enabled: val, dryRun: true }); return; }
     tools[toolName] = val;
     await ctx.configPort.write({ ...config, tools } as never);
     ctx.term.ok(`工具 ${toolName}: ${val ? '启用' : '禁用'}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('tool.set', { name: toolName, enabled: val });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'tool.set', name: toolName, enabled: val });
     return;
   }
 
   if (sub === 'reset') {
-    if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将重置工具配置'); return; }
+    if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将重置工具配置'); if (ctx.options.json) ctx.term.jsonOut({ action: 'tool.reset', dryRun: true }); return; }
     const config = await ctx.configPort.read();
     await ctx.configPort.write({ ...config, tools: {} } as never);
     ctx.term.ok('工具配置已重置');
+    if (!ctx.options.dryRun) await ctx.audit.append('tool.reset', {});
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'tool.reset' });
     return;
   }
 
@@ -679,10 +688,11 @@ export const serverHandler: CommandHandler = async (args, ctx) => {
     if (flags.mdns !== undefined) update.mdns = flags.mdns;
     if (flags.cors !== undefined) update.cors = flags.cors;
     if (Object.keys(update).length === 0) { ctx.term.err('无可设置的选项'); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 server: ${JSON.stringify(update)}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 server: ${JSON.stringify(update)}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'server.set', dryRun: true, updates: update }); return; }
     await ctx.services.config.updateConfig({ server: update } as Record<string, unknown>);
     ctx.term.ok('已更新服务器配置');
     if (!ctx.options.dryRun) await ctx.audit.append('server.set', { updates: update });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'server.set', updates: update });
     return;
   }
 
@@ -752,27 +762,33 @@ export const serverHandler: CommandHandler = async (args, ctx) => {
     return;
   }
 
-  // ── restart ───────────────────────────────────────────
-  if (sub === 'restart') {
-    // 先 stop
-    const { flags: _s1 } = parseFlags(args.slice(1), {});
-    // 复用 stop 逻辑
-    const pidFile = path.join(CONFIG_DIR, 'server.pid');
-    try {
-      const pidStr = (await ctx.fs.readFile(pidFile)).trim();
-      const pid = Number(pidStr);
-      if (pid) { process.kill(pid, 'SIGTERM'); await ctx.fs.deleteFile(pidFile); }
-    } catch { /* ignore */ }
+    // ── restart ───────────────────────────────────────────
+    if (sub === 'restart') {
+      if (ctx.options.dryRun) {
+        ctx.term.info('[DRY-RUN] 将重启开发服务器');
+        if (ctx.options.json) ctx.term.jsonOut({ action: 'server.restart', dryRun: true });
+        return;
+      }
+      // 先 stop
+      const { flags: _s1 } = parseFlags(args.slice(1), {});
+      // 复用 stop 逻辑
+      const pidFile = path.join(CONFIG_DIR, 'server.pid');
+      try {
+        const pidStr = (await ctx.fs.readFile(pidFile)).trim();
+        const pid = Number(pidStr);
+        if (pid) { process.kill(pid, 'SIGTERM'); await ctx.fs.deleteFile(pidFile); }
+      } catch { /* ignore */ }
 
-    // 再 start
-    const { spawn } = await import('node:child_process');
-    const child = spawn('npx', ['vite'], { cwd: process.cwd(), detached: true, stdio: 'ignore' });
-    child.unref();
-    await ctx.fs.writeFile(pidFile, String(child.pid));
-    ctx.term.ok(`服务器已重启 (PID ${child.pid})`);
-    if (!ctx.options.dryRun) await ctx.audit.append('server.restart', { pid: child.pid });
-    return;
-  }
+      // 再 start
+      const { spawn } = await import('node:child_process');
+      const child = spawn('npx', ['vite'], { cwd: process.cwd(), detached: true, stdio: 'ignore' });
+      child.unref();
+      await ctx.fs.writeFile(pidFile, String(child.pid));
+      ctx.term.ok(`服务器已重启 (PID ${child.pid})`);
+      if (!ctx.options.dryRun) await ctx.audit.append('server.restart', { pid: child.pid });
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'server.restart', pid: child.pid });
+      return;
+    }
 
   // ── watch ─────────────────────────────────────────────
   if (sub === 'watch') {
@@ -960,7 +976,7 @@ export const referenceHandler: CommandHandler = async (args, ctx) => {
     });
 
     if (refs[name]) { ctx.term.err(`引用 "${name}" 已存在`); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将添加引用: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将添加引用: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'reference.add', name, dryRun: true }); return; }
 
     const entry: Record<string, unknown> = {};
     if (target.startsWith('http://') || target.startsWith('https://')) {
@@ -1048,10 +1064,12 @@ export const referenceHandler: CommandHandler = async (args, ctx) => {
     const name = args[1];
     if (!name) { ctx.term.err('用法: reference remove <名称>'); return; }
     if (!refs[name]) { ctx.term.err(`引用 "${name}" 不存在`); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除引用: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除引用: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'reference.remove', name, dryRun: true }); return; }
     delete refs[name];
     await ctx.configPort.write({ ...config, references: refs } as never);
     ctx.term.ok(`已删除引用: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('reference.remove', { name });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'reference.remove', name });
     return;
   }
 
@@ -1083,7 +1101,7 @@ export const commandCustomHandler: CommandHandler = async (args, ctx) => {
     });
     if (!flags.template) { ctx.term.err('必须提供 --template'); return; }
     if (commands[name]) { ctx.term.err(`命令 "${name}" 已存在`); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将添加命令: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将添加命令: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'command.add', name, dryRun: true }); return; }
     commands[name] = { template: flags.template };
     await ctx.configPort.write({ ...config, commands } as never);
     ctx.term.ok(`已添加命令: ${name}`);
@@ -1095,13 +1113,14 @@ export const commandCustomHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'remove') {
     const name = args[1];
     if (!name) { ctx.term.err('用法: command remove <名称>'); return; }
-    if (!commands[name]) { ctx.term.err(`命令 "${name}" 不存在`); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除命令: ${name}`); return; }
-    delete commands[name];
-    await ctx.configPort.write({ ...config, commands } as never);
-    ctx.term.ok(`已删除命令: ${name}`);
-    if (!ctx.options.dryRun) await ctx.audit.append('command.remove', { name });
-    return;
+     if (!commands[name]) { ctx.term.err(`命令 "${name}" 不存在`); return; }
+     if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除命令: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'command.remove', name, dryRun: true }); return; }
+     delete commands[name];
+     await ctx.configPort.write({ ...config, commands } as never);
+     ctx.term.ok(`已删除命令: ${name}`);
+     if (!ctx.options.dryRun) await ctx.audit.append('command.remove', { name });
+     if (ctx.options.json) ctx.term.jsonOut({ action: 'command.remove', name });
+     return;
   }
 
   if (sub === 'edit') {
@@ -1192,6 +1211,7 @@ export const compactionHandler: CommandHandler = async (args, ctx) => {
     (config as Record<string, unknown>).compaction = { ...current, ...update };
     await ctx.configPort.write(config);
     ctx.term.ok('已更新压缩配置');
+    if (!ctx.options.dryRun) await ctx.audit.append('compaction.set', { updates: update });
     return;
   }
 
@@ -1216,12 +1236,14 @@ export const toolOutputHandler: CommandHandler = async (args, ctx) => {
     if (flags['max-lines'] !== undefined) update.maxLines = flags['max-lines'];
     if (flags['max-bytes'] !== undefined) update.maxBytes = flags['max-bytes'];
     if (Object.keys(update).length === 0) { ctx.term.err('无可设置的选项'); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 tool-output: ${JSON.stringify(update)}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 tool-output: ${JSON.stringify(update)}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'tool-output.set', dryRun: true, updates: update }); return; }
     const config = await ctx.configPort.read();
     const current = ((config as Record<string, unknown>).toolOutput || {}) as Record<string, unknown>;
     (config as Record<string, unknown>).toolOutput = { ...current, ...update };
     await ctx.configPort.write(config);
     ctx.term.ok('已更新工具输出配置');
+    if (!ctx.options.dryRun) await ctx.audit.append('tool-output.set', { updates: update });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'tool-output.set', updates: update });
     return;
   }
 
@@ -1241,12 +1263,14 @@ export const experimentalHandler: CommandHandler = async (args, ctx) => {
     const rawVal = args[2];
     if (!feature || rawVal === undefined) { ctx.term.err('用法: experimental set <特性> <true|false>'); return; }
     const val = rawVal === 'true';
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 experimental ${feature} = ${val}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 experimental ${feature} = ${val}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'experimental.set', dryRun: true, feature, value: val }); return; }
     const config = await ctx.configPort.read();
     const current = ((config as Record<string, unknown>).experimental || {}) as Record<string, unknown>;
     (config as Record<string, unknown>).experimental = { ...current, [feature]: val };
     await ctx.configPort.write(config);
     ctx.term.ok(`已${val ? '启用' : '禁用'}实验性功能: ${feature}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('experimental.set', { feature, value: val });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'experimental.set', feature, value: val });
     return;
   }
 
@@ -1268,7 +1292,7 @@ export const attachmentHandler: CommandHandler = async (args, ctx) => {
       // 支持: attachment set max-width 800
       const update: Record<string, unknown> = {};
       update[dim.replace(/-/g, '')] = parseFloat(rawVal);
-      if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 attachment: ${JSON.stringify(update)}`); return; }
+      if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 attachment: ${JSON.stringify(update)}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'attachment.set', dryRun: true, updates: update }); return; }
       const config = await ctx.configPort.read();
       const current = ((config as Record<string, unknown>).attachment || {}) as Record<string, unknown>;
       (config as Record<string, unknown>).attachment = { ...current, ...update };

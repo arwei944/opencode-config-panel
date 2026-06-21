@@ -15,6 +15,16 @@ export const listHandler: CommandHandler = async (args, ctx) => {
     case 'providers':
     case 'provider': {
       const providers = await ctx.services.provider.list();
+      if (ctx.options.json) {
+        ctx.term.jsonOut({
+          action: 'list.providers',
+          providers: Object.entries(providers).map(([name, p]) => {
+            const pAny = p as Record<string, unknown>;
+            return { name, type: (pAny.type as string) || 'unknown', modelCount: pAny.models ? Object.keys(pAny.models as Record<string, unknown>).length : 0 };
+          }),
+        });
+        return;
+      }
       ctx.term.raw(`提供商 (${Object.keys(providers).length}):`);
       for (const [name, p] of Object.entries(providers)) {
         const pAny = p as Record<string, unknown>;
@@ -30,16 +40,21 @@ export const listHandler: CommandHandler = async (args, ctx) => {
       const targetProvider = args[1];
 
       if (providers) {
+        const allModels: { provider: string; name: string; displayName?: string }[] = [];
         for (const [name, p] of Object.entries(providers)) {
           if (targetProvider && name !== targetProvider) continue;
           if (p.models) {
-            ctx.term.raw(`${name} 模型 (${Object.keys(p.models).length}):`);
             for (const [mk, mv] of Object.entries(p.models)) {
-              ctx.term.raw(`  ${mk}${mv.name ? `  (${mv.name})` : ''}`);
+              allModels.push({ provider: name, name: mk, displayName: mv.name });
             }
           }
         }
+        if (ctx.options.json) { ctx.term.jsonOut({ action: 'list.models', models: allModels }); return; }
+        for (const m of allModels) {
+          ctx.term.raw(`  ${m.provider}/${m.name}${m.displayName ? `  (${m.displayName})` : ''}`);
+        }
       } else {
+        if (ctx.options.json) { ctx.term.jsonOut({ action: 'list.models', models: [] }); return; }
         ctx.term.err('(无模型)');
       }
       return;
@@ -51,6 +66,15 @@ export const listHandler: CommandHandler = async (args, ctx) => {
         filter: { type: 'string' },
       });
       const agents = (await ctx.configPort.read()).agent as Record<string, { mode?: string; model?: string; permission?: Record<string, string>; color?: string; steps?: number; hidden?: boolean }> | undefined || {};
+      if (ctx.options.json) {
+        ctx.term.jsonOut({
+          action: 'list.agents',
+          agents: Object.entries(agents)
+            .filter(([, a]) => !flags.filter || a.mode === flags.filter)
+            .map(([name, a]) => ({ name, mode: a.mode || 'subagent', model: a.model, ...(flags.verbose ? { permission: a.permission, color: a.color, steps: a.steps, hidden: a.hidden } : {}) })),
+        });
+        return;
+      }
       ctx.term.raw(`代理 (${Object.keys(agents).length}):`);
       for (const [name, a] of Object.entries(agents)) {
         if (flags.filter && a.mode !== flags.filter) continue;
@@ -73,12 +97,20 @@ export const listHandler: CommandHandler = async (args, ctx) => {
     }
     case 'tools':
     case 'tool': {
+      if (ctx.options.json) { ctx.term.jsonOut({ action: 'list.tools', tools: [] }); return; }
       return ctx.term.raw('工具: (使用默认配置)');
     }
     case 'skills':
     case 'skill': {
       const result = await ctx.services.skill.scan();
       if (result.skills.length === 0) { ctx.term.raw('(无技能)'); return; }
+      if (ctx.options.json) {
+        ctx.term.jsonOut({
+          action: 'list.skills',
+          skills: result.skills.map(s => ({ name: s.name, description: s.description, license: s.license, severity: s.severity })),
+        });
+        return;
+      }
       for (const s of result.skills) {
         ctx.term.raw(`  ${s.name}${s.description ? ` — ${s.description}` : ''}`);
       }
@@ -90,8 +122,19 @@ export const listHandler: CommandHandler = async (args, ctx) => {
         verbose: { type: 'boolean', alias: 'v' },
       });
       const config = await ctx.configPort.read();
-      const mcp = (config.mcp || {}) as Record<string, { type?: string; enabled?: boolean; command?: string | string[]; url?: string; cwd?: string; timeout?: number; environment?: Record<string, string>; headers?: Record<string, string> }>;
+      const mcp = (config.mcp || {}) as Record<string, { type?: string; enabled?: boolean; command?: string | string[]; url?: string; cwd?: string; timeout?: number }>;
       if (Object.keys(mcp).length === 0) { ctx.term.raw('(无 MCP 服务器)'); return; }
+      if (ctx.options.json) {
+        ctx.term.jsonOut({
+          action: 'list.mcp',
+          servers: Object.entries(mcp).map(([name, s]) => ({
+            name, type: s.type || 'local', enabled: s.enabled !== false,
+            command: Array.isArray(s.command) ? s.command.join(' ') : s.command,
+            url: s.url,
+          })),
+        });
+        return;
+      }
       ctx.term.raw(`MCP 服务器 (${Object.keys(mcp).length}):`);
       for (const [name, s] of Object.entries(mcp)) {
         const type = s.type || 'local';
@@ -102,10 +145,6 @@ export const listHandler: CommandHandler = async (args, ctx) => {
           ctx.term.raw(`    type: ${type}`);
           ctx.term.raw(`    status: ${enabled}`);
           ctx.term.raw(`    ${type === 'remote' ? 'url' : 'command'}: ${cmd}`);
-          if (s.cwd) ctx.term.raw(`    cwd: ${s.cwd}`);
-          if (s.timeout) ctx.term.raw(`    timeout: ${s.timeout}ms`);
-          if (s.environment && Object.keys(s.environment).length > 0) ctx.term.raw(`    env: ${Object.keys(s.environment).join(', ')}`);
-          if (s.headers && Object.keys(s.headers).length > 0) ctx.term.raw(`    headers: ${Object.keys(s.headers).join(', ')}`);
         } else {
           ctx.term.raw(`  ${name}  [${type}]  ${enabled}  ${cmd}`);
         }
@@ -116,6 +155,13 @@ export const listHandler: CommandHandler = async (args, ctx) => {
     case 'backup': {
       const backups = await ctx.backupPort.list();
       if (backups.length === 0) { ctx.term.raw('(无备份)'); return; }
+      if (ctx.options.json) {
+        ctx.term.jsonOut({
+          action: 'list.backups',
+          backups: backups.map(b => ({ id: b.id, size: b.size, timestamp: b.timestamp })),
+        });
+        return;
+      }
       ctx.term.raw(`备份 (${backups.length}):`);
       for (const b of backups) {
         ctx.term.raw(`  ${b.id}  (${formatBytes(b.size || 0)}, ${b.timestamp ? new Date(b.timestamp).toLocaleString() : ''})`);
@@ -139,12 +185,14 @@ export const addHandler: CommandHandler = async (args, ctx) => {
 
   if (ctx.options.dryRun) {
     ctx.term.info(`[DRY-RUN] 将添加提供商: ${baseURL}${apiKey ? ' (含 apiKey)' : ''}`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'provider.add', baseURL, apiKey: !!apiKey, dryRun: true });
     return;
   }
 
   const result = await ctx.services.provider.smartAdd(baseURL, apiKey);
   ctx.term.ok(`已添加 ${result.name} (type=${result.config.type})`);
   if (!ctx.options.dryRun) await ctx.audit.append('provider.add', { name: result.name });
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'provider.add', name: result.name, type: result.config.type });
 };
 
 /** 删除提供商 */
@@ -160,12 +208,14 @@ export const removeHandler: CommandHandler = async (args, ctx) => {
 
   if (ctx.options.dryRun) {
     ctx.term.info(`[DRY-RUN] 将删除提供商: ${name}`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'provider.remove', name, dryRun: true });
     return;
   }
 
   await ctx.services.provider.delete(name);
   ctx.term.ok(`已删除 ${name}`);
   if (!ctx.options.dryRun) await ctx.audit.append('provider.remove', { name });
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'provider.remove', name });
 };
 
 /** 更新提供商 */
@@ -179,9 +229,11 @@ export const providerUpdateHandler: CommandHandler = async (args, ctx) => {
   if (flags.timeout !== undefined) update.options = { timeout: flags.timeout };
   if (Object.keys(update).length === 0) { ctx.term.warn('无可更新的选项'); return; }
 
-  if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将更新 ${name}: ${JSON.stringify(update)}`); return; }
+  if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将更新 ${name}: ${JSON.stringify(update)}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'provider.update', name, updates: update, dryRun: true }); return; }
   await ctx.services.provider.update(name, update as never);
   ctx.term.ok(`已更新 ${name}`);
+  if (!ctx.options.dryRun) await ctx.audit.append('provider.update', { name, updates: update });
+  if (ctx.options.json) ctx.term.jsonOut({ action: 'provider.update', name, updates: update });
 };
 
 /** 列出提供商模型详情 */

@@ -49,6 +49,7 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
     if (!name) { ctx.term.err('用法: key get <名称>'); return; }
     const store = await loadKeyStore(ctx.fs);
     if (!store[name]) { ctx.term.err(`密钥 "${name}" 不存在`); return; }
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'key.get', name, value: store[name] }); return; }
     ctx.term.out(store[name]);
     return;
   }
@@ -67,6 +68,7 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
     await saveKeyStore(ctx.fs, store);
     ctx.term.ok(`密钥 ${name} 已删除`);
     if (!ctx.options.dryRun) await ctx.audit.append('key.delete', { provider: name });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'key.delete', name });
     return;
   }
 
@@ -82,8 +84,10 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
     if (exportPath && exportPath !== '--redact') {
       await ctx.fs.writeFile(exportPath, json);
       ctx.term.ok(`密钥已导出到 ${exportPath}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'key.export', path: exportPath, keys: Object.keys(output).length });
     } else {
-      ctx.term.out(json);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'key.export', keys: output });
+      else ctx.term.out(json);
     }
     return;
   }
@@ -91,12 +95,15 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'import') {
     const importPath = args[1];
     if (!importPath) { ctx.term.err('用法: key import <文件路径>'); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将导入密钥: ${importPath}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'key.import', path: importPath, dryRun: true }); return; }
     const raw = await ctx.fs.readFile(importPath);
     const imported = JSON.parse(raw);
     const store = await loadKeyStore(ctx.fs);
     Object.assign(store, imported);
-    await saveKeyStore(ctx.fs, store);
+    await ctx.fs.writeFile(KEYS_PATH, JSON.stringify(store, null, 2));
     ctx.term.ok(`已导入 ${Object.keys(imported).length} 个密钥`);
+    if (!ctx.options.dryRun) await ctx.audit.append('key.import', { path: importPath, count: Object.keys(imported).length });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'key.import', path: importPath, imported: Object.keys(imported).length });
     return;
   }
 

@@ -21,12 +21,17 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
     const info = await ctx.services.config.createBackupManually();
     ctx.term.ok(`备份已创建: ${info.id}`);
     if (!ctx.options.dryRun) await ctx.audit.append('backup.create', { id: info.id });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.create', id: info.id });
     return;
   }
 
   if (sub === 'list') {
     const backups = await ctx.backupPort.list();
     if (backups.length === 0) { ctx.term.raw('(无备份)'); return; }
+    if (ctx.options.json) {
+      ctx.term.jsonOut({ action: 'backup.list', backups: backups.map(b => ({ id: b.id, size: b.size, timestamp: b.timestamp })) });
+      return;
+    }
     ctx.term.raw(`备份 (${backups.length}):`);
     for (const b of backups) {
       ctx.term.raw(`  ${b.id}  (${formatBytes(b.size || 0)}, ${b.timestamp ? new Date(b.timestamp).toLocaleString() : ''})`);
@@ -37,9 +42,12 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'restore') {
     const id = args[1];
     if (!id) { ctx.term.err('用法: backup restore <备份文件名>'); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将恢复备份: ${id}`); return; }
     try {
       await ctx.services.config.restoreBackup(id);
       ctx.term.ok(`已从 ${id} 恢复`);
+      if (!ctx.options.dryRun) await ctx.audit.append('backup.restore', { id });
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.restore', id });
     } catch (e) { ctx.term.err(`恢复失败: ${(e as Error).message}`); }
     return;
   }
@@ -51,6 +59,8 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
       if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除: ${id}`); return; }
       await ctx.backupPort.delete(id);
       ctx.term.ok(`备份 ${id} 已删除`);
+      if (!ctx.options.dryRun) await ctx.audit.append('backup.delete', { id });
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.delete', id });
     } catch (e) { ctx.term.err(`删除失败: ${(e as Error).message}`); }
     return;
   }
@@ -74,19 +84,28 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
     // 按时间排序
     backups.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
     const toDelete = backups.slice(keepCount!);
+    const deletedIds: string[] = [];
 
-    // dry-run 模式下跳过确认提示（模拟旧 CLI 行为）
-    if (!ctx.options.dryRun && !ctx.options.yes) {
+    if (ctx.options.dryRun) {
+      for (const b of toDelete) ctx.term.info(`[DRY-RUN] 将删除: ${b.id}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.cleanup', dryRun: true, kept: keepCount, toDelete: toDelete.length, ids: toDelete.map(b => b.id) });
+      return;
+    }
+
+    // dry-run 模式下跳过确认提示
+    if (!ctx.options.yes) {
       const ok = await ctx.prompt.confirm(`将删除 ${toDelete.length} 个旧备份，确认？(y/N) `);
       if (!ok) { ctx.term.raw('已取消'); return; }
     }
 
     let deleted = 0;
     for (const b of toDelete) {
-      if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除: ${b.id}`); }
-      else { await ctx.backupPort.delete(b.id); deleted++; }
+      await ctx.backupPort.delete(b.id);
+      deletedIds.push(b.id);
+      deleted++;
     }
     ctx.term.ok(`已清理 ${deleted} 个备份`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.cleanup', kept: keepCount, deleted: deleted, ids: deletedIds });
     return;
   }
 
@@ -96,7 +115,14 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
     const da = await ctx.backupPort.read(a);
     const db = await ctx.backupPort.read(bVal);
     const changes = diffObject(da as Record<string, unknown>, db as Record<string, unknown>);
-    if (changes.length === 0) { ctx.term.ok('无差异'); return; }
+    if (changes.length === 0) {
+      if (ctx.options.json) { ctx.term.jsonOut({ action: 'backup.diff', a, b: bVal, changes: [] }); return; }
+      ctx.term.ok('无差异'); return;
+    }
+    if (ctx.options.json) {
+      ctx.term.jsonOut({ action: 'backup.diff', a, b: bVal, changes: changes.slice(0, 200) });
+      return;
+    }
     ctx.term.raw(`差异 (${a} → ${bVal}): ${changes.length} 项`);
     for (const c of changes.slice(0, 50)) {
       if (c.op === 'add') ctx.term.raw(`  + ${c.path} = ${JSON.stringify(c.newVal)}`);
@@ -191,9 +217,16 @@ export const rollbackHandler: CommandHandler = async (args, ctx) => {
   });
 
   if (flags.latest || args[0] === '--latest' || args[0] === '-l') {
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将回滚到最新备份: ${backups[0].id}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'rollback', target: backups[0].id, dryRun: true });
+      return;
+    }
     const latest = backups[0];
     await ctx.services.config.restoreBackup(latest.id);
     ctx.term.ok(`已回滚到最新备份: ${latest.id}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('rollback.restore', { target: latest.id });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'rollback', target: latest.id });
     return;
   }
 
@@ -201,8 +234,15 @@ export const rollbackHandler: CommandHandler = async (args, ctx) => {
   if (targetId) {
     const found = backups.find(b => b.id === targetId);
     if (!found) { ctx.term.err(`备份 "${targetId}" 不存在`); return; }
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将回滚到: ${targetId}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'rollback', target: targetId, dryRun: true });
+      return;
+    }
     await ctx.services.config.restoreBackup(found.id);
     ctx.term.ok(`已回滚到: ${found.id}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('rollback.restore', { target: found.id });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'rollback', target: found.id });
     return;
   }
 
@@ -216,6 +256,7 @@ export const rollbackHandler: CommandHandler = async (args, ctx) => {
   if (isNaN(idx) || idx < 0 || idx >= Math.min(backups.length, 20)) { ctx.term.raw('已取消'); return; }
   await ctx.services.config.restoreBackup(backups[idx].id);
   ctx.term.ok(`已回滚到: ${backups[idx].id}`);
+  if (!ctx.options.dryRun) await ctx.audit.append('rollback.restore', { target: backups[idx].id });
 };
 
 /** diff 命令 */

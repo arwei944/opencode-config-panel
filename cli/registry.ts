@@ -64,6 +64,11 @@ import {
 /** 命令注册表 */
 const commandRegistry: Record<string, CommandDefinition> = {};
 
+/** 根据命令名获取定义 */
+export function getCommandDef(name: string): CommandDefinition | undefined {
+  return commandRegistry[name];
+}
+
 /** 递归注册命令 */
 function register(cmd: CommandDefinition): void {
   commandRegistry[cmd.name] = cmd;

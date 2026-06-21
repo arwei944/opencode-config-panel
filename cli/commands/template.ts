@@ -17,6 +17,7 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
     await ctx.fs.ensureDir(TEMPLATES_DIR);
     const entries = await ctx.fs.readDir(TEMPLATES_DIR);
     const names = entries.filter(e => e.isFile && e.name.endsWith('.json')).map(e => e.name.replace(/\.json$/, ''));
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'template.list', templates: names }); return; }
     if (names.length === 0) { ctx.term.raw('(无模板)'); return; }
     ctx.term.raw(`模板 (${names.length}):`);
     for (const n of names) ctx.term.raw(`  ${n}`);
@@ -62,10 +63,11 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
     const templatePath = path.join(TEMPLATES_DIR, `${name}.json`);
     if (!await ctx.fs.exists(templatePath)) { ctx.term.err(`模板 "${name}" 不存在`); return; }
     const template = JSON.parse(await ctx.fs.readFile(templatePath));
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将应用模板: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将应用模板: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'template.apply', name, dryRun: true }); return; }
     await ctx.configPort.write(template);
     ctx.term.ok(`已应用模板: ${name}`);
     if (!ctx.options.dryRun) await ctx.audit.append('template.apply', { name });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'template.apply', name });
     return;
   }
 
@@ -105,8 +107,10 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
     if (exportPath) {
       await ctx.fs.writeFile(exportPath, content);
       ctx.term.ok(`已导出到 ${exportPath}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'template.export', name, path: exportPath });
     } else {
-      ctx.term.out(content);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'template.export', name, content: JSON.parse(content) });
+      else ctx.term.out(content);
     }
     return;
   }
@@ -114,11 +118,14 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'import') {
     const importPath = args[1];
     if (!importPath) { ctx.term.err('用法: template import <文件路径>'); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将导入模板: ${importPath}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'template.import', source: importPath, dryRun: true }); return; }
     const raw = await ctx.fs.readFile(importPath);
     const name = path.basename(importPath, '.json');
     await ctx.fs.ensureDir(TEMPLATES_DIR);
     await ctx.fs.writeFile(path.join(TEMPLATES_DIR, `${name}.json`), raw);
     ctx.term.ok(`模板已导入: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('template.import', { name, source: importPath });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'template.import', name, source: importPath });
     return;
   }
 
@@ -146,6 +153,7 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
     const active = await getActiveProfileName();
     const entries = await ctx.fs.readDir(PROFILES_DIR);
     const names = entries.filter(e => e.isFile && e.name.endsWith('.json')).map(e => e.name.replace(/\.json$/, ''));
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'profile.list', profiles: names, active }); return; }
     if (names.length === 0) { ctx.term.raw('(无 profile)'); return; }
     ctx.term.raw(`Profiles (${names.length}):${active ? ` [当前: ${active}]` : ''}`);
     for (const n of names) ctx.term.raw(`  ${n}${n === active ? ' ← 当前' : ''}`);
@@ -202,6 +210,7 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
     const profilePath = path.join(PROFILES_DIR, `${name}.json`);
     if (!await ctx.fs.exists(profilePath)) { ctx.term.err(`Profile "${name}" 不存在`); return; }
     const content = await ctx.fs.readFile(profilePath);
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'profile.show', name, profile: JSON.parse(content) }); return; }
     ctx.term.out(content);
     return;
   }
@@ -245,8 +254,10 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
     if (exportPath) {
       await ctx.fs.writeFile(exportPath, content);
       ctx.term.ok(`已导出到 ${exportPath}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'profile.export', name, path: exportPath });
     } else {
-      ctx.term.out(content);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'profile.export', name, profile: JSON.parse(content) });
+      else ctx.term.out(content);
     }
     return;
   }
@@ -259,6 +270,7 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
     await ctx.fs.ensureDir(PROFILES_DIR);
     await ctx.fs.writeFile(path.join(PROFILES_DIR, `${name}.json`), raw);
     ctx.term.ok(`Profile 已导入: ${name}`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'profile.import', name, source: importPath });
     return;
   }
 
