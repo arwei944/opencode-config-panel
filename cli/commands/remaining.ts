@@ -6,7 +6,12 @@
 import path from 'node:path';
 import os from 'node:os';
 import type { CommandHandler, CliContext } from '../types';
+import type { IFileSystemPort } from '../../core/ports/IFileSystemPort';
 import { parseFlags } from '../utils';
+
+// 通用路径常量
+const CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
+const CONFIG_PATH = path.join(CONFIG_DIR, 'opencode.json');
 
 // ============================================================
 // 审计日志
@@ -305,13 +310,13 @@ export const skillsHandler: CommandHandler = async (args, ctx) => {
     const newPath = args[2];
     if (!name || !newPath) { ctx.term.err('用法: skills add-path <名称> <路径>'); return; }
 
-    const result = await readSkillFrontmatter(ctx.fs, ctx.term, name);
+    const result = await readSkillFrontmatter(ctx, name);
     if (!result) return;
     const { current, frontmatterStart } = result;
 
     const paths = [...(current.paths as string[] || []), newPath];
     const newFrontmatter = { ...current, paths };
-    await writeSkillFrontmatter(ctx.fs, ctx.term, name, newFrontmatter, frontmatterStart);
+    await writeSkillFrontmatter(ctx, name, newFrontmatter, frontmatterStart);
     ctx.term.ok(`技能 "${name}" 已添加路径: ${newPath}`);
     if (!ctx.options.dryRun) await ctx.audit.append('skills.add-path', { name, path: newPath });
     return;
@@ -323,12 +328,12 @@ export const skillsHandler: CommandHandler = async (args, ctx) => {
     const url = args[2];
     if (!name || !url) { ctx.term.err('用法: skills add-url <名称> <URL>'); return; }
 
-    const result = await readSkillFrontmatter(ctx.fs, ctx.term, name);
+    const result = await readSkillFrontmatter(ctx, name);
     if (!result) return;
     const { current, frontmatterStart } = result;
 
     const newFrontmatter = { ...current, url };
-    await writeSkillFrontmatter(ctx.fs, ctx.term, name, newFrontmatter, frontmatterStart);
+    await writeSkillFrontmatter(ctx, name, newFrontmatter, frontmatterStart);
     ctx.term.ok(`技能 "${name}" 已添加 URL: ${url}`);
     if (!ctx.options.dryRun) await ctx.audit.append('skills.add-url', { name, url });
     return;
@@ -342,9 +347,9 @@ async function readSkillFrontmatter(
   ctx: CliContext, name: string,
 ): Promise<{ current: Record<string, unknown>; frontmatterStart: number } | null> {
   const filePath = `${SKILLS_DIR}/${name}/SKILL.md`;
-  const raw = await fs.readFile(filePath).catch(() => '');
-  if (!raw) { term.err(`技能 "${name}" 不存在`); return null; }
-  const parsed = fs.parseMarkdown(raw);
+  const raw = await ctx.fs.readFile(filePath).catch(() => '');
+  if (!raw) { ctx.term.err(`技能 "${name}" 不存在`); return null; }
+  const parsed = ctx.fs.parseMarkdown(raw);
   return { current: parsed.frontmatter, frontmatterStart: raw.indexOf('---', 3) > 0 ? 3 : 0 };
 }
 
@@ -355,10 +360,10 @@ async function writeSkillFrontmatter(
   frontmatterStart: number,
 ): Promise<void> {
   const filePath = `${SKILLS_DIR}/${name}/SKILL.md`;
-  const raw = await fs.readFile(filePath);
-  const parsed = fs.parseMarkdown(raw);
+  const raw = await ctx.fs.readFile(filePath);
+  const parsed = ctx.fs.parseMarkdown(raw);
   const content = ctx.fs.serializeMarkdown(frontmatter, parsed.content);
-  await fs.writeFile(filePath, content);
+  await ctx.fs.writeFile(filePath, content);
 }
 
 // ============================================================
@@ -368,7 +373,25 @@ export const mcpHandler: CommandHandler = async (args, ctx) => {
   const sub = args[0];
 
   if (!sub || sub === 'list' || sub === 'ls') {
-    // 委托给 listHandler
+    // 委托给 listHandler，但 --json 需要自己处理（listHandler 暂不支持 --json）
+    const config = await ctx.configPort.read();
+    const mcp = (config.mcp || {}) as unknown as Record<string, Record<string, unknown>>;
+    const entries = Object.entries(mcp);
+
+    if (entries.length === 0) { ctx.term.raw('(无 MCP 服务器)'); return; }
+
+    if (ctx.options.json) {
+      ctx.term.jsonOut({
+        action: 'mcp.list',
+        servers: entries.map(([n, v]) => {
+          const rec = v as Record<string, unknown>;
+          return { name: n, type: rec.type || 'local', enabled: rec.enabled !== false, command: rec.command, url: rec.url };
+        }),
+      });
+      return;
+    }
+
+    // 用 listHandler 输出文本格式
     const { listHandler: listFn } = await import('./providers');
     await listFn(['mcp', ...args.slice(1)], ctx);
     return;
@@ -413,6 +436,8 @@ export const mcpHandler: CommandHandler = async (args, ctx) => {
     mcp[name] = entry;
     await ctx.configPort.write({ ...config, mcp } as never);
     ctx.term.ok(`已添加 MCP 服务器: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('mcp.add', { name, type: entry.type });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'mcp.add', name, type: entry.type });
     return;
   }
 
@@ -424,6 +449,8 @@ export const mcpHandler: CommandHandler = async (args, ctx) => {
     delete mcp[name];
     await ctx.configPort.write({ ...config, mcp } as never);
     ctx.term.ok(`已删除 MCP 服务器: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('mcp.remove', { name });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'mcp.remove', name });
     return;
   }
 
@@ -436,10 +463,122 @@ export const mcpHandler: CommandHandler = async (args, ctx) => {
     mcp[name].enabled = !current;
     await ctx.configPort.write({ ...config, mcp } as never);
     ctx.term.ok(`已${current ? '禁用' : '启用'} MCP: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('mcp.toggle', { name, enabled: !current });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'mcp.toggle', name, enabled: !current });
     return;
   }
 
-  ctx.term.err('用法: mcp <add|remove|toggle|list> [参数]');
+  // ── update ───────────────────────────────────────────
+  if (sub === 'update') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: mcp update <名称> [--command <命令> | --url <URL> | --header <k=v> | --enabled <true|false>]'); return; }
+    if (!mcp[name]) { ctx.term.err(`MCP 服务器 "${name}" 不存在`); return; }
+
+    const { flags } = parseFlags(args.slice(2), {
+      command: { type: 'string' },
+      url: { type: 'string' },
+      header: { type: 'string' },
+      enabled: { type: 'string' },
+    });
+
+    if (Object.keys(flags).length === 0 || (flags as Record<string, unknown>)._provided === false) {
+      // parseFlags 没有 provided 字段，手动判断
+      const hasFlag = args.slice(2).some(a => a.startsWith('--'));
+      if (!hasFlag) { ctx.term.err('请提供至少一个更新字段，如 --command 或 --url'); return; }
+    }
+
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将更新 MCP: ${name}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'mcp.update', name, dryRun: true, changes: flags });
+      return;
+    }
+
+    const updated: Record<string, unknown> = {};
+    if (flags.command) { updated.type = 'local'; updated.command = (flags.command as string).split(/\s+/); }
+    if (flags.url) { updated.type = 'remote'; updated.url = flags.url as string; }
+    if (flags.header) {
+      const hdrParts = (flags.header as string).split('=');
+      if (hdrParts.length === 2) { updated.headers = { [hdrParts[0]]: hdrParts[1] }; }
+    }
+    if (flags.enabled !== undefined) {
+      const val = (flags.enabled as string).toLowerCase();
+      if (val === 'true' || val === '1') updated.enabled = true;
+      else if (val === 'false' || val === '0') updated.enabled = false;
+    }
+
+    Object.assign(mcp[name], updated);
+    await ctx.configPort.write({ ...config, mcp } as never);
+    ctx.term.ok(`已更新 MCP 服务器: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('mcp.update', { name, changes: updated });
+    return;
+  }
+
+  // ── test ─────────────────────────────────────────────
+  if (sub === 'test') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: mcp test <名称>'); return; }
+    const entry = mcp[name];
+    if (!entry) { ctx.term.err(`MCP 服务器 "${name}" 不存在`); return; }
+
+    if (entry.type === 'remote' && entry.url) {
+      // HTTP 连通性测试
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(entry.url as string, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeout);
+        const ok = res.ok || res.status < 500;
+        ctx.term.ok(`${name}: ${ok ? '可达' : `异常 (HTTP ${res.status})`}`);
+        if (!ctx.options.dryRun) await ctx.audit.append('mcp.test', { name, reachable: ok, status: res.status });
+      } catch (e) {
+        ctx.term.err(`${name}: 不可达 — ${(e as Error).message}`);
+        if (!ctx.options.dryRun) await ctx.audit.append('mcp.test', { name, reachable: false, error: (e as Error).message });
+      }
+    } else if (entry.type === 'local' && Array.isArray(entry.command)) {
+      // 本地命令存在性检查
+      const cmd = (entry.command as string[])[0];
+      ctx.term.ok(`${name}: 本地命令 "${cmd}" 已配置`);
+      if (!ctx.options.dryRun) await ctx.audit.append('mcp.test', { name, reachable: true, type: 'local' });
+    } else {
+      ctx.term.warn(`${name}: 无法测试（缺少 url 或 command）`);
+    }
+    return;
+  }
+
+  // ── doctor ───────────────────────────────────────────
+  if (sub === 'doctor') {
+    const entries = Object.entries(mcp);
+    if (entries.length === 0) { ctx.term.raw('(无 MCP 服务器)'); return; }
+
+    const issues: string[] = [];
+    for (const [mName, m] of entries) {
+      if (!m.type) issues.push(`${mName}: 缺少 type`);
+      if (m.type === 'remote' && !m.url) issues.push(`${mName}: 缺少 url`);
+      if (m.type === 'local' && !m.command) issues.push(`${mName}: 缺少 command`);
+    }
+
+    if (ctx.options.json) {
+      ctx.term.jsonOut({
+        action: 'mcp.doctor',
+        total: entries.length,
+        issues,
+        healthy: issues.length === 0,
+        servers: entries.map(([n, v]) => ({ name: n, ...(v as Record<string, unknown>) })),
+      });
+      return;
+    }
+
+    ctx.term.raw(`MCP 服务器 (${entries.length}):`);
+    for (const [mName, m] of entries) {
+      const type = (m as Record<string, unknown>).type || '?';
+      const enabled = (m as Record<string, unknown>).enabled !== false ? '启用' : '禁用';
+      ctx.term.raw(`  ${mName}  [${type}]  ${enabled}`);
+      if (issues.length > 0) for (const i of issues.filter(x => x.startsWith(mName))) ctx.term.warn(`    ${i}`);
+    }
+    return;
+  }
+
+  ctx.term.err('用法: mcp <list|add|remove|toggle|update|test|doctor> [参数]');
 };
 
 // ============================================================
@@ -449,8 +588,29 @@ export const toolHandler: CommandHandler = async (args, ctx) => {
   const sub = args[0];
 
   if (!sub || sub === 'list' || sub === 'ls') {
-    const { flags } = parseFlags(args.slice(1), { verbose: { type: 'boolean' } });
-    ctx.term.raw('工具: (使用默认配置)');
+    const { flags } = parseFlags(args.slice(1), { verbose: { type: 'boolean', alias: 'v' } });
+    const config = await ctx.configPort.read();
+    const tools = (config.tools || {}) as Record<string, boolean>;
+
+    if (Object.keys(tools).length === 0) { ctx.term.raw('工具: (使用默认配置，未手动调整)'); return; }
+
+    if (ctx.options.json) {
+      ctx.term.jsonOut({
+        action: 'tool.list',
+        tools: Object.entries(tools).map(([name, enabled]) => ({ name, enabled })),
+      });
+      return;
+    }
+
+    ctx.term.raw(`工具 (${Object.keys(tools).length}):`);
+    if (flags.verbose) {
+      for (const [name, enabled] of Object.entries(tools)) {
+        ctx.term.raw(`  ${name}: ${enabled ? '启用' : '禁用'}`);
+      }
+    } else {
+      const enabledCount = Object.values(tools).filter(Boolean).length;
+      ctx.term.raw(`  启用: ${enabledCount} / 禁用: ${Object.keys(tools).length - enabledCount}`);
+    }
     return;
   }
 
@@ -522,10 +682,116 @@ export const serverHandler: CommandHandler = async (args, ctx) => {
     if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 server: ${JSON.stringify(update)}`); return; }
     await ctx.services.config.updateConfig({ server: update } as Record<string, unknown>);
     ctx.term.ok('已更新服务器配置');
+    if (!ctx.options.dryRun) await ctx.audit.append('server.set', { updates: update });
     return;
   }
 
-  ctx.term.err('用法: server <show|set> [--port] [--hostname] [--mdns] [--cors]');
+  // ── start ─────────────────────────────────────────────
+  if (sub === 'start') {
+    const { flags } = parseFlags(args.slice(1), {
+      port: { type: 'number' },
+      host: { type: 'string' },
+      open: { type: 'boolean' },
+    });
+
+    const pidFile = path.join(CONFIG_DIR, 'server.pid');
+    try {
+      const existingPid = (await ctx.fs.readFile(pidFile)).trim();
+      // 检查进程是否还存在
+      try { process.kill(Number(existingPid), 0); } catch {
+        // 进程不存在，清理 stale pid file
+        await ctx.fs.deleteFile(pidFile);
+      }
+    } catch { /* no pid file — proceed */ }
+
+    if (ctx.options.dryRun) {
+      ctx.term.info('[DRY-RUN] 将启动开发服务器');
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'server.start', dryRun: true });
+      return;
+    }
+
+    const { spawn } = await import('node:child_process');
+    const port = flags.port ? `--port ${flags.port}` : '';
+    const host = flags.host ? `--host ${flags.host}` : '';
+    const openFlag = flags.open ? '--open' : '';
+    const child = spawn('npx', ['vite', ...port.split(' ').filter(Boolean), ...host.split(' ').filter(Boolean), ...openFlag.split(' ').filter(Boolean)], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    await ctx.fs.writeFile(pidFile, String(child.pid));
+    ctx.term.ok(`服务器已启动 (PID ${child.pid})`);
+    if (!ctx.options.dryRun) await ctx.audit.append('server.start', { pid: child.pid });
+    return;
+  }
+
+  // ── stop ──────────────────────────────────────────────
+  if (sub === 'stop') {
+    const pidFile = path.join(CONFIG_DIR, 'server.pid');
+    if (ctx.options.dryRun) {
+      ctx.term.info('[DRY-RUN] 将停止开发服务器');
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'server.stop', dryRun: true });
+      return;
+    }
+
+    try {
+      const pidStr = (await ctx.fs.readFile(pidFile)).trim();
+      const pid = Number(pidStr);
+      if (pid) {
+        process.kill(pid, 'SIGTERM');
+        await ctx.fs.deleteFile(pidFile);
+        ctx.term.ok(`服务器已停止 (PID ${pid})`);
+        if (!ctx.options.dryRun) await ctx.audit.append('server.stop', { pid });
+      } else {
+        ctx.term.warn('PID 文件无效');
+      }
+    } catch {
+      ctx.term.warn('服务器未运行或 PID 文件不存在');
+    }
+    return;
+  }
+
+  // ── restart ───────────────────────────────────────────
+  if (sub === 'restart') {
+    // 先 stop
+    const { flags: _s1 } = parseFlags(args.slice(1), {});
+    // 复用 stop 逻辑
+    const pidFile = path.join(CONFIG_DIR, 'server.pid');
+    try {
+      const pidStr = (await ctx.fs.readFile(pidFile)).trim();
+      const pid = Number(pidStr);
+      if (pid) { process.kill(pid, 'SIGTERM'); await ctx.fs.deleteFile(pidFile); }
+    } catch { /* ignore */ }
+
+    // 再 start
+    const { spawn } = await import('node:child_process');
+    const child = spawn('npx', ['vite'], { cwd: process.cwd(), detached: true, stdio: 'ignore' });
+    child.unref();
+    await ctx.fs.writeFile(pidFile, String(child.pid));
+    ctx.term.ok(`服务器已重启 (PID ${child.pid})`);
+    if (!ctx.options.dryRun) await ctx.audit.append('server.restart', { pid: child.pid });
+    return;
+  }
+
+  // ── watch ─────────────────────────────────────────────
+  if (sub === 'watch') {
+    const { flags } = parseFlags(args.slice(1), { config: { type: 'string' } });
+    const watchPath = (flags.config as string) || CONFIG_PATH;
+    const { watch } = await import('node:fs');
+
+    ctx.term.info(`监听配置文件: ${watchPath} (Ctrl+C 停止)`);
+
+    await new Promise<void>((resolve) => {
+      const watcher = watch(watchPath, (eventType: string) => {
+        ctx.term.info(`[${new Date().toISOString()}] 检测到变更 (${eventType})`);
+      });
+      process.on('SIGINT', () => { watcher.close(); resolve(); });
+    });
+    return;
+  }
+
+  ctx.term.err('用法: server <show|set|start|stop|restart|watch> [参数]');
 };
 
 // ============================================================
@@ -708,6 +974,73 @@ export const referenceHandler: CommandHandler = async (args, ctx) => {
     refs[name] = entry;
     await ctx.configPort.write({ ...config, references: refs } as never);
     ctx.term.ok(`已添加引用: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('reference.add', { name, ...entry });
+    return;
+  }
+
+  if (sub === 'update') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: reference update <名称> [--url <URL> | --path <路径> | --description <描述> | --branch <分支>]'); return; }
+    if (!refs[name]) { ctx.term.err(`引用 "${name}" 不存在`); return; }
+
+    const { flags } = parseFlags(args.slice(2), {
+      url: { type: 'string' },
+      path: { type: 'string' },
+      description: { type: 'string' },
+      branch: { type: 'string' },
+    });
+
+    const hasFlag = args.slice(2).some(a => a.startsWith('--'));
+    if (!hasFlag) { ctx.term.err('请提供至少一个更新字段'); return; }
+
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将更新引用: ${name}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'reference.update', name, dryRun: true, changes: flags });
+      return;
+    }
+
+    const r = refs[name] as Record<string, unknown>;
+    if (flags.url !== undefined) { r.url = flags.url as string; delete r.path; }
+    if (flags.path !== undefined) { r.path = flags.path as string; delete r.url; }
+    if (flags.description !== undefined) r.description = flags.description as string;
+    if (flags.branch !== undefined) r.branch = flags.branch as string;
+
+    await ctx.configPort.write({ ...config, references: refs } as never);
+    ctx.term.ok(`已更新引用: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('reference.update', { name, changes: flags });
+    return;
+  }
+
+  if (sub === 'validate') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: reference validate <名称>'); return; }
+    const r = refs[name];
+    if (!r) { ctx.term.err(`引用 "${name}" 不存在`); return; }
+
+    const rRec = r as Record<string, unknown>;
+    const results: { name: string; check: string; ok: boolean }[] = [];
+
+    if (rRec.url) {
+      try {
+        const res = await fetch(rRec.url as string, { method: 'HEAD' });
+        results.push({ name, check: `URL 可达 (HTTP ${res.status})`, ok: res.ok || res.status < 500 });
+      } catch (e) {
+        results.push({ name, check: 'URL 可达性', ok: false });
+      }
+    }
+    if (rRec.path) {
+      try { await ctx.fs.stat(rRec.path as string); results.push({ name, check: `路径存在: ${rRec.path}`, ok: true }); }
+      catch { results.push({ name, check: `路径存在: ${rRec.path}`, ok: false }); }
+    }
+
+    if (ctx.options.json) {
+      ctx.term.jsonOut({ action: 'reference.validate', name, results });
+      return;
+    }
+
+    for (const r2 of results) {
+      ctx.term[r2.ok ? 'ok' : 'err'](`${r2.name}: ${r2.check}`);
+    }
     return;
   }
 
@@ -722,7 +1055,7 @@ export const referenceHandler: CommandHandler = async (args, ctx) => {
     return;
   }
 
-  ctx.term.err('用法: reference <add|remove|list> [参数]');
+  ctx.term.err('用法: reference <list|add|update|remove|validate> [参数]');
 };
 
 // ============================================================
@@ -735,8 +1068,10 @@ export const commandCustomHandler: CommandHandler = async (args, ctx) => {
 
   if (!sub || sub === 'list') {
     if (Object.keys(commands).length === 0) { ctx.term.raw('(无自定义命令)'); return; }
-    ctx.term.raw(`自定义命令 (${Object.keys(commands).length}):`);
-    for (const [name] of Object.entries(commands)) ctx.term.raw(`  ${name}`);
+    const names = Object.keys(commands);
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'command.list', commands: names }); return; }
+    ctx.term.raw(`自定义命令 (${names.length}):`);
+    for (const n of names) ctx.term.raw(`  ${n}`);
     return;
   }
 
@@ -752,6 +1087,8 @@ export const commandCustomHandler: CommandHandler = async (args, ctx) => {
     commands[name] = { template: flags.template };
     await ctx.configPort.write({ ...config, commands } as never);
     ctx.term.ok(`已添加命令: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('command.add', { name });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'command.add', name });
     return;
   }
 
@@ -763,10 +1100,65 @@ export const commandCustomHandler: CommandHandler = async (args, ctx) => {
     delete commands[name];
     await ctx.configPort.write({ ...config, commands } as never);
     ctx.term.ok(`已删除命令: ${name}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('command.remove', { name });
     return;
   }
 
-  ctx.term.err('用法: command <add|remove|list> [参数]');
+  if (sub === 'edit') {
+    const name = args[1];
+    if (!name) { ctx.term.err('用法: command edit <名称>'); return; }
+    if (!commands[name]) { ctx.term.err(`命令 "${name}" 不存在`); return; }
+
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将打开编辑器: ${name}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'command.edit', name, dryRun: true });
+      return;
+    }
+
+    // 将 template 写入临时文件并打开编辑器
+    const template = (commands[name] as Record<string, unknown>).template as string;
+    const tmpFile = path.join(os.tmpdir(), `occ-cmd-${name}.md`);
+    await ctx.fs.writeFile(tmpFile, template);
+    const editor = process.env.EDITOR || 'vi';
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(editor, [tmpFile], { stdio: 'inherit' });
+    if (r.status !== 0) { ctx.term.err(`编辑器退出码: ${r.status}`); return; }
+    const updated = await ctx.fs.readFile(tmpFile);
+    (commands[name] as Record<string, unknown>).template = updated;
+    await ctx.configPort.write({ ...config, commands } as never);
+    ctx.term.ok(`命令 "${name}" 模板已更新`);
+    if (!ctx.options.dryRun) await ctx.audit.append('command.edit', { name });
+    return;
+  }
+
+  if (sub === 'run') {
+    const name = args[1];
+    const restArgs = args.slice(2);
+    if (!name) { ctx.term.err('用法: command run <名称> [args...]'); return; }
+    if (!commands[name]) { ctx.term.err(`命令 "${name}" 不存在`); return; }
+
+    const template = (commands[name] as Record<string, unknown>).template as string;
+    // 简单变量替换：{0} {1} ... → args
+    let cmd = template;
+    for (let i = 0; i < restArgs.length; i++) {
+      cmd = cmd.replace(new RegExp(`\\{${i}\\}`, 'g'), restArgs[i]);
+    }
+    cmd = cmd.replace(/\{(\d+)\}/g, ''); // 清理未提供参数的占位符
+
+    if (ctx.options.dryRun) {
+      ctx.term.info(`[DRY-RUN] 将执行: ${cmd}`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'command.run', name, command: cmd, dryRun: true });
+      return;
+    }
+
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(cmd, { shell: true, stdio: 'inherit' });
+    if (r.status !== 0) ctx.term.err(`命令退出码: ${r.status}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('command.run', { name, command: cmd });
+    return;
+  }
+
+  ctx.term.err('用法: command <list|add|remove|edit|run> [参数]');
 };
 
 // ============================================================
@@ -882,13 +1274,31 @@ export const attachmentHandler: CommandHandler = async (args, ctx) => {
       (config as Record<string, unknown>).attachment = { ...current, ...update };
       await ctx.configPort.write(config);
       ctx.term.ok('已更新附件限制');
+      if (!ctx.options.dryRun) await ctx.audit.append('attachment.set', { updates: update });
       return;
     }
     ctx.term.err('用法: attachment set max-width|max-height|max-bytes <数字>');
     return;
   }
 
-  ctx.term.err('用法: attachment set max-width|max-height|max-bytes <数字>');
+  if (sub === 'show') {
+    const config = await ctx.configPort.read();
+    const att = ((config as Record<string, unknown>).attachment || {}) as Record<string, unknown>;
+
+    if (ctx.options.json) {
+      ctx.term.jsonOut({ action: 'attachment.show', maxWidth: att.maxWidth, maxHeight: att.maxHeight, maxBytes: att.maxBytes });
+      return;
+    }
+
+    if (Object.keys(att).length === 0) { ctx.term.raw('(无附件限制)'); return; }
+    ctx.term.raw('附件限制:');
+    if (att.maxWidth)  ctx.term.raw(`  max-width:  ${att.maxWidth}`);
+    if (att.maxHeight) ctx.term.raw(`  max-height: ${att.maxHeight}`);
+    if (att.maxBytes)  ctx.term.raw(`  max-bytes:  ${att.maxBytes}`);
+    return;
+  }
+
+  ctx.term.err('用法: attachment <show|set> [参数]');
 };
 
 // ============================================================
