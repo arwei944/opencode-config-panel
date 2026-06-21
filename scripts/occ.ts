@@ -7,11 +7,17 @@
  * ============================================================
  */
 
+import { fileURLToPath } from 'node:url';
 import { runCLI } from '../cli/composer';
+export { runCLI };
 
-const args = process.argv.slice(2);
-
-runCLI(args).catch(err => {
-  console.error(`未捕获错误: ${err.message}`);
-  process.exit(1);
-});
+// 通过全局标志防止被 tsImport 加载时重复执行
+declare global { var __OCC_BOOTSTRAPPING: boolean | undefined; }
+if (typeof globalThis.__OCC_BOOTSTRAPPING === 'undefined') {
+  globalThis.__OCC_BOOTSTRAPPING = true;
+  const args = process.argv.slice(2);
+  runCLI(args).catch(err => {
+    console.error(`未捕获错误: ${err.message}`);
+    process.exit(1);
+  });
+}
