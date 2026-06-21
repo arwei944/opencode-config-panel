@@ -1454,7 +1454,7 @@ export const selfUpdateHandler: CommandHandler = async (args, ctx) => {
 
     // 输出 PID 文件路径供管理使用
     const pidFile = path.join(os.homedir(), '.config', 'opencode', 'self-update.pid');
-    const { writeFile, mkdir, readFile, deleteFile } = await import('node:fs/promises');
+    const { writeFile, mkdir, readFile, unlink } = await import('node:fs/promises');
     const { existsSync } = await import('node:fs');
     try { await mkdir(path.dirname(pidFile), { recursive: true }); } catch { /* ignore */ }
 
@@ -1462,7 +1462,7 @@ export const selfUpdateHandler: CommandHandler = async (args, ctx) => {
       const existingPid = parseInt((await readFile(pidFile, 'utf-8')).trim(), 10);
       try { process.kill(existingPid, 0); } catch {
         // 旧进程已死，清理 stale PID
-        await deleteFile(pidFile).catch(() => {});
+        await unlink(pidFile).catch(() => {});
       }
     }
 
@@ -1488,7 +1488,7 @@ export const selfUpdateHandler: CommandHandler = async (args, ctx) => {
     let timer: NodeJS.Timeout | null = null;
     const onSignal = async () => {
       if (timer) clearInterval(timer);
-      try { await deleteFile(pidFile); } catch { /* ignore */ }
+      try { await unlink(pidFile); } catch { /* ignore */ }
       process.exit(0);
     };
     process.on('SIGTERM', onSignal);
