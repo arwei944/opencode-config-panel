@@ -34,13 +34,14 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'set') {
     const name = args[1];
     if (!name) { ctx.term.err('用法: key set <名称>'); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将存储密钥: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将存储密钥: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'key.set', name, dryRun: true }); return; }
     const value = await ctx.prompt.readPassword(`输入密钥值 (${name}): `);
     const store = await loadKeyStore(ctx.fs);
     store[name] = value;
     await saveKeyStore(ctx.fs, store);
     ctx.term.ok(`密钥 ${name} 已存储`);
     if (!ctx.options.dryRun) await ctx.audit.append('key.set', { provider: name });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'key.set', name });
     return;
   }
 
@@ -59,7 +60,7 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
     if (!name) { ctx.term.err('用法: key delete <名称>'); return; }
     const store = await loadKeyStore(ctx.fs);
     if (!store[name]) { ctx.term.err(`密钥 "${name}" 不存在`); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除密钥: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将删除密钥: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'key.delete', name, dryRun: true }); return; }
     if (!ctx.options.yes) {
       const ok = await ctx.prompt.confirm(`确认删除密钥 "${name}"？(y/N) `);
       if (!ok) { ctx.term.raw('已取消'); return; }
@@ -80,6 +81,7 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
     if (redact) {
       for (const [k, v] of Object.entries(output)) output[k] = redactApiKey(v);
     }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将导出密钥 (${Object.keys(output).length} 个)`); if (ctx.options.json) ctx.term.jsonOut({ action: 'key.export', keys: Object.keys(output).length, dryRun: true }); return; }
     const json = JSON.stringify(output, null, 2);
     if (exportPath && exportPath !== '--redact') {
       await ctx.fs.writeFile(exportPath, json);

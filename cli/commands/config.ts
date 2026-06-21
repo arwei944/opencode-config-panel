@@ -81,6 +81,7 @@ export const setHandler: CommandHandler = async (args, ctx) => {
 
   if (ctx.options.dryRun) {
     ctx.term.info(`[DRY-RUN] 将设置: ${key} = ${JSON.stringify(parsed)}`);
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'config.set', key, value: parsed, dryRun: true });
     return;
   }
 
@@ -118,7 +119,7 @@ export const toggleHandler: CommandHandler = async (args, ctx) => {
 
 /** 验证配置 */
 export const validateHandler: CommandHandler = async (_args, ctx) => {
-  if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将验证配置'); return; }
+  if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将验证配置'); if (ctx.options.json) ctx.term.jsonOut({ action: 'config.validate', dryRun: true }); return; }
 
   const config = await ctx.configPort.read();
   const result = ctx.services.config.validate(config);
@@ -138,6 +139,7 @@ export const formatHandler: CommandHandler = async (_args, ctx) => {
   const config = await ctx.configPort.read();
   if (ctx.options.dryRun) {
     ctx.term.info('[DRY-RUN] 将格式化 opencode.json');
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'config.format', dryRun: true });
     return;
   }
   await ctx.configPort.write(config);
@@ -218,7 +220,7 @@ export const importHandler: CommandHandler = async (args, ctx) => {
 export const setModelHandler: CommandHandler = async (args, ctx) => {
   const model = args[0];
   if (!model) { ctx.term.err('用法: set-model <模型名>'); return; }
-  if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 model = ${model}`); return; }
+  if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 model = ${model}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'config.set-model', model, dryRun: true }); return; }
   await ctx.services.config.updateConfig({ model } as Record<string, unknown>);
   ctx.term.ok(`已设置 model = ${model}`);
   if (ctx.options.json) ctx.term.jsonOut({ action: 'config.set-model', model });
@@ -228,7 +230,7 @@ export const setModelHandler: CommandHandler = async (args, ctx) => {
 export const setSmallModelHandler: CommandHandler = async (args, ctx) => {
   const model = args[0];
   if (!model) { ctx.term.err('用法: set-small-model <模型名>'); return; }
-  if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 small_model = ${model}`); return; }
+  if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 small_model = ${model}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'config.set-small-model', small_model: model, dryRun: true }); return; }
   await ctx.services.config.updateConfig({ small_model: model } as Record<string, unknown>);
   ctx.term.ok(`已设置 small_model = ${model}`);
   if (ctx.options.json) ctx.term.jsonOut({ action: 'config.set-small-model', small_model: model });
@@ -238,7 +240,7 @@ export const setSmallModelHandler: CommandHandler = async (args, ctx) => {
 export const setDefaultAgentHandler: CommandHandler = async (args, ctx) => {
   const agent = args[0];
   if (!agent) { ctx.term.err('用法: set-default-agent <代理名>'); return; }
-  if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 default_agent = ${agent}`); return; }
+  if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 default_agent = ${agent}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'config.set-default-agent', default_agent: agent, dryRun: true }); return; }
   await ctx.services.config.updateConfig({ default_agent: agent } as Record<string, unknown>);
   ctx.term.ok(`已设置 default_agent = ${agent}`);
   if (ctx.options.json) ctx.term.jsonOut({ action: 'config.set-default-agent', default_agent: agent });
@@ -262,14 +264,14 @@ export const disabledProvidersHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'add') {
     if (!name) { ctx.term.err('用法: disabled-providers add <提供商名称>'); return; }
     if (current.includes(name)) { ctx.term.warn(`"${name}" 已禁用`); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将禁用: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将禁用: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'disabled-providers.add', name, dryRun: true }); return; }
     await ctx.services.config.updateConfig({ [key]: [...current, name] } as Record<string, unknown>);
     ctx.term.ok(`已禁用 ${name}`);
     if (ctx.options.json) ctx.term.jsonOut({ action: 'disabled-providers.add', name });
   } else if (sub === 'remove') {
     if (!name) { ctx.term.err('用法: disabled-providers remove <提供商名称>'); return; }
     if (!current.includes(name)) { ctx.term.warn(`"${name}" 未禁用`); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将启用: ${name}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将启用: ${name}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'disabled-providers.remove', name, dryRun: true }); return; }
     await ctx.services.config.updateConfig({ [key]: current.filter((n: string) => n !== name) } as Record<string, unknown>);
     ctx.term.ok(`已启用 ${name}`);
     if (ctx.options.json) ctx.term.jsonOut({ action: 'disabled-providers.remove', name });
@@ -292,12 +294,12 @@ export const enabledProvidersHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'set') {
     const names = args.slice(1);
     if (names.length === 0) { ctx.term.err('用法: enabled-providers set <名称1> [名称2] ...'); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置仅限提供商: ${names.join(', ')}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置仅限提供商: ${names.join(', ')}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'enabled-providers.set', providers: names, dryRun: true }); return; }
     await ctx.services.config.updateConfig({ [key]: names } as Record<string, unknown>);
     ctx.term.ok(`已设置仅限提供商: ${names.join(', ')}`);
     if (ctx.options.json) ctx.term.jsonOut({ action: 'enabled-providers.set', providers: names });
   } else if (sub === 'clear') {
-    if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将清除仅限提供商限制'); return; }
+    if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将清除仅限提供商限制'); if (ctx.options.json) ctx.term.jsonOut({ action: 'enabled-providers.clear', dryRun: true }); return; }
     await ctx.services.config.updateConfig({ [key]: [] } as Record<string, unknown>);
     ctx.term.ok('已清除仅限提供商限制');
     if (ctx.options.json) ctx.term.jsonOut({ action: 'enabled-providers.clear' });
