@@ -144,6 +144,7 @@ export const addHandler: CommandHandler = async (args, ctx) => {
 
   const result = await ctx.services.provider.smartAdd(baseURL, apiKey);
   ctx.term.ok(`已添加 ${result.name} (type=${result.config.type})`);
+  if (!ctx.options.dryRun) await ctx.audit.append('provider.add', { name: result.name });
 };
 
 /** 删除提供商 */
@@ -164,6 +165,7 @@ export const removeHandler: CommandHandler = async (args, ctx) => {
 
   await ctx.services.provider.delete(name);
   ctx.term.ok(`已删除 ${name}`);
+  if (!ctx.options.dryRun) await ctx.audit.append('provider.remove', { name });
 };
 
 /** 更新提供商 */

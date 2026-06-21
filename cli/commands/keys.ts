@@ -40,6 +40,7 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
     store[name] = value;
     await saveKeyStore(ctx.fs, store);
     ctx.term.ok(`密钥 ${name} 已存储`);
+    if (!ctx.options.dryRun) await ctx.audit.append('key.set', { provider: name });
     return;
   }
 
@@ -65,6 +66,7 @@ export const keyHandler: CommandHandler = async (args, ctx) => {
     delete store[name];
     await saveKeyStore(ctx.fs, store);
     ctx.term.ok(`密钥 ${name} 已删除`);
+    if (!ctx.options.dryRun) await ctx.audit.append('key.delete', { provider: name });
     return;
   }
 

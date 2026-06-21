@@ -68,6 +68,24 @@ export const statusHandler: CommandHandler = async (_args, ctx) => {
   let fileSize = 0;
   try { fileSize = (await ctx.fs.stat(CONFIG_PATH)).size; } catch { /* ignore */ }
 
+  if (ctx.options.json) {
+    ctx.term.jsonOut({
+      configPath: CONFIG_PATH,
+      configSize: (fileSize / 1024).toFixed(1) + ' KB',
+      providers: totalProviders,
+      models: modelCount,
+      agents: agentCount,
+      skills: skillCount,
+      mcp: mcpCount,
+      tools: toolCount,
+      model: config.model || null,
+      small_model: config.small_model || null,
+      default_agent: config.default_agent || null,
+      providerNames: config.provider ? Object.keys(config.provider as Record<string, unknown>) : [],
+    });
+    return;
+  }
+
   ctx.term.raw('========================================');
   ctx.term.raw('  Opencode 配置概览');
   ctx.term.raw('========================================');

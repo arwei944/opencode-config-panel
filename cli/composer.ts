@@ -22,6 +22,9 @@ import { SkillService } from '../core/services/SkillService';
 import { McpService } from '../core/services/McpService';
 import { HooksService } from '../core/services/HooksService';
 
+// CLI 服务
+import { AuditService } from './services/AuditService';
+
 // 适配器（来自 server/adapters — 可复用）
 import { FileSystemConfigAdapter } from '../server/adapters/FileSystemConfigAdapter';
 import { FileSystemBackupAdapter } from '../server/adapters/FileSystemBackupAdapter';
@@ -102,6 +105,13 @@ export async function runCLI(argv: string[]): Promise<void> {
   term.setOptions({ json: options.json, quiet: options.quiet, color: options.color });
   prompt.setAutoConfirm(options.yes);
 
+  // 审计日志服务
+  const logsDir = path.join(CONFIG_DIR, 'logs');
+  const audit = new AuditService({
+    fs: fileSystemAdapter,
+    logsDir,
+  });
+
   if (!cmd) {
     await helpHandler([], {
       options,
@@ -111,6 +121,7 @@ export async function runCLI(argv: string[]): Promise<void> {
       configPort: configAdapter,
       backupPort: backupAdapter,
       services: null as never, // 仅用于 help
+      audit, // help 需要 context 类型完整
     });
     return;
   }
@@ -177,7 +188,7 @@ export async function runCLI(argv: string[]): Promise<void> {
   const mcpService = new McpService({ configPort: configAdapter });
   const hooksService = new HooksService({ configPort: configAdapter });
 
-  // 创建 CLI 上下文
+  // 创建 CLI 上下文（audit 已在 if 之前创建）
   const context: CliContext = {
     options,
     term,
@@ -194,6 +205,7 @@ export async function runCLI(argv: string[]): Promise<void> {
       mcp: mcpService,
       hook: hooksService,
     },
+    audit,
   };
 
   // 分发命令

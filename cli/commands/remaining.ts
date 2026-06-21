@@ -3,13 +3,8 @@
  * command-custom, compaction, tool-output, experimental, attachment, ui, self
  */
 
-import path from 'node:path';
-import os from 'node:os';
 import type { CommandHandler } from '../types';
-import { parseFlags, validateEnum } from '../utils';
-
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
-const AUDIT_LOG_PATH = path.join(CONFIG_DIR, '.audit.log');
+import { parseFlags } from '../utils';
 
 // ============================================================
 // 审计日志
@@ -18,25 +13,21 @@ export const logHandler: CommandHandler = async (args, ctx) => {
   const sub = args[0];
   if (sub === 'clear') {
     if (ctx.options.dryRun) { ctx.term.info('[DRY-RUN] 将清空审计日志'); return; }
-    await ctx.fs.writeFile(AUDIT_LOG_PATH, '[]');
+    await ctx.audit.clear();
     ctx.term.ok('审计日志已清空');
     return;
   }
 
-  try {
-    const raw = await ctx.fs.readFile(AUDIT_LOG_PATH);
-    const entries = JSON.parse(raw) as Array<{ time: string; action: string; detail?: Record<string, unknown> }>;
-    const tail = parseInt(args[1] || '20', 10);
-    const recent = entries.slice(-tail);
+  const tail = parseInt((args[1] || '20'), 10);
+  const entries = await ctx.audit.tail(tail);
 
-    if (ctx.options.json) { ctx.term.jsonOut(recent); return; }
+  if (ctx.options.json) { ctx.term.jsonOut(entries); return; }
 
-    if (recent.length === 0) { ctx.term.raw('(无审计日志)'); return; }
-    ctx.term.raw(`审计日志 (最近 ${recent.length} 条):`);
-    for (const e of recent) {
-      ctx.term.raw(`  ${e.time}  ${e.action}${e.detail ? ' ' + JSON.stringify(e.detail) : ''}`);
-    }
-  } catch { ctx.term.raw('(无审计日志)'); }
+  if (entries.length === 0) { ctx.term.raw('(无审计日志)'); return; }
+  ctx.term.raw(`审计日志 (最近 ${entries.length} 条):`);
+  for (const e of entries) {
+    ctx.term.raw(`  ${e.time}  ${e.action}${e.detail ? ' ' + JSON.stringify(e.detail) : ''}`);
+  }
 };
 
 // ============================================================
@@ -95,6 +86,7 @@ export const jsonHandler: CommandHandler = async (args, ctx) => {
     ptr[lastKey] = parsedVal;
     await ctx.configPort.write(current as never);
     ctx.term.ok(`已设置 ${jsonPath} = ${JSON.stringify(parsedVal)}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('json.set', { path: jsonPath, value: parsedVal });
     return;
   }
 
@@ -140,6 +132,7 @@ export const jsonHandler: CommandHandler = async (args, ctx) => {
 
     await ctx.configPort.write(configObj as never);
     ctx.term.ok(`已执行 json patch: ${jsonPath} (${patch.op})`);
+    if (!ctx.options.dryRun) await ctx.audit.append('json.patch', { path: jsonPath, op: patch.op });
     return;
   }
 

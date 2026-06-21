@@ -20,6 +20,7 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
   if (!sub || sub === 'create') {
     const info = await ctx.services.config.createBackupManually();
     ctx.term.ok(`备份已创建: ${info.id}`);
+    if (!ctx.options.dryRun) await ctx.audit.append('backup.create', { id: info.id });
     return;
   }
 
@@ -74,7 +75,8 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
     backups.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
     const toDelete = backups.slice(keepCount!);
 
-    if (!ctx.options.yes) {
+    // dry-run 模式下跳过确认提示（模拟旧 CLI 行为）
+    if (!ctx.options.dryRun && !ctx.options.yes) {
       const ok = await ctx.prompt.confirm(`将删除 ${toDelete.length} 个旧备份，确认？(y/N) `);
       if (!ok) { ctx.term.raw('已取消'); return; }
     }
@@ -133,8 +135,9 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
               const ts = new Date().toISOString().replace(/[:.]/g, '-');
               ctx.term.info(`[DRY-RUN] 检测到变更，应备份到: opencode-${ts}.json (大小 ${Buffer.byteLength(content)} 字节)`);
             } else {
-              const name = (await ctx.services.config.createBackupManually()).id;
-              ctx.term.ok(`自动备份: ${name}`);
+              const info = await ctx.services.config.createBackupManually();
+              ctx.term.ok(`自动备份: ${info.id}`);
+              if (!ctx.options.dryRun) await ctx.audit.append('backup.create', { id: info.id, auto: true });
               backupsCreated++;
             }
           }

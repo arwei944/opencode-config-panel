@@ -8,6 +8,7 @@ import type { ITerminalPort } from './ports/ITerminalPort';
 import type { IUserInteractionPort } from './ports/IUserInteractionPort';
 import type { ConfigService, ProviderService, AgentService, ToolService, SkillService, McpService, HooksService } from '../core/services';
 import type { IFileSystemPort, IBackupPort, IConfigPort } from '../core/ports';
+import type { AuditService } from './services/AuditService';
 
 /** CLI 全局选项 */
 export interface CliGlobalOptions {
@@ -56,4 +57,6 @@ export interface CliContext {
     mcp: McpService;
     hook: HooksService;
   };
+  /** 审计日志服务 */
+  audit: AuditService;
 }

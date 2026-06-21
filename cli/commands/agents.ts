@@ -16,7 +16,7 @@ export const agentCreateHandler: CommandHandler = async (args, ctx) => {
   if (!name) { ctx.term.err('用法: agent create <名称> [模式] <描述> [model]'); return; }
 
   // 解析参数
-  let mode = 'subagent';
+  let mode = 'primary';
   let description = '';
   let model = '';
   const rest = args.slice(1);
@@ -60,6 +60,7 @@ export const agentCreateHandler: CommandHandler = async (args, ctx) => {
   await ctx.fs.writeFile(path.join(AGENTS_DIR, `${name}.md`), mdContent);
 
   ctx.term.ok(`已创建代理: ${name} (${mode})`);
+  if (!ctx.options.dryRun) await ctx.audit.append('agent.create', { name, mode, description });
 };
 
 /** 删除代理 */
@@ -83,6 +84,7 @@ export const agentDeleteHandler: CommandHandler = async (args, ctx) => {
   try { await ctx.fs.deleteFile(path.join(AGENTS_DIR, `${name}.md`)); } catch { /* ignore */ }
 
   ctx.term.ok(`已删除代理: ${name}`);
+  if (!ctx.options.dryRun) await ctx.audit.append('agent.delete', { name });
 };
 
 /** 更新代理 */

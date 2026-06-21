@@ -3,6 +3,11 @@
  * 适配器：NodeTerminalAdapter
  * 描述：终端输出的 Node.js 实现
  * 实现：ITerminalPort
+ *
+ * 核心规则（--json 模式）：
+ *   - stdout 只包含纯 JSON（通过 jsonOut）
+ *   - 所有人类可读文本输出到 stderr
+ *   - err() 始终输出到 stderr
  * ============================================================
  */
 
@@ -28,38 +33,60 @@ export class NodeTerminalAdapter implements ITerminalPort {
     if (opts.color !== undefined) this.colorMode = opts.color;
   }
 
+  /** 普通输出 — JSON 模式时走 stderr */
   out(...args: unknown[]): void {
-    if (!this.quietMode) console.log(...args);
+    const target = this.jsonMode ? process.stderr : process.stdout;
+    if (!this.jsonMode && this.quietMode) return;
+    target.write(args.map(String).join(' ') + '\n');
   }
 
+  /** 成功提示 — JSON 模式时走 stderr */
   ok(msg: string): void {
+    if (this.jsonMode) {
+      process.stderr.write((this.colorMode ? Colors.green(`✓ ${msg}`) : `✓ ${msg}`) + '\n');
+      return;
+    }
     if (this.quietMode) return;
     console.log(this.colorMode ? Colors.green(`✓ ${msg}`) : `✓ ${msg}`);
   }
 
+  /** 信息提示 — JSON 模式时走 stderr */
   info(msg: string): void {
+    if (this.jsonMode) {
+      process.stderr.write((this.colorMode ? Colors.dim(msg) : msg) + '\n');
+      return;
+    }
     if (this.quietMode) return;
     console.log(this.colorMode ? Colors.dim(msg) : msg);
   }
 
+  /** 警告提示 — JSON 模式时走 stderr */
   warn(msg: string): void {
+    if (this.jsonMode) {
+      process.stderr.write((this.colorMode ? Colors.yellow(`⚠ ${msg}`) : `⚠ ${msg}`) + '\n');
+      return;
+    }
     if (this.quietMode) return;
     console.log(this.colorMode ? Colors.yellow(`⚠ ${msg}`) : `⚠ ${msg}`);
   }
 
+  /** 错误提示 — 始终走 stderr */
   err(msg: string): void {
-    // 错误不受 --quiet 影响
     console.error(this.colorMode ? Colors.red(`✗ ${msg}`) : `✗ ${msg}`);
   }
 
+  /** JSON 输出 — 始终走 stdout（--json 模式的唯一 stdout 输出方式） */
   jsonOut(data: unknown): void {
-    if (this.jsonMode) {
-      if (typeof data === 'string') console.log(data);
-      else console.log(JSON.stringify(data));
-    }
+    if (typeof data === 'string') console.log(data);
+    else console.log(JSON.stringify(data));
   }
 
+  /** 原始输出 — JSON 模式时走 stderr */
   raw(...args: unknown[]): void {
+    if (this.jsonMode) {
+      process.stderr.write(args.map(String).join(' ') + '\n');
+      return;
+    }
     console.log(...args);
   }
 }

@@ -82,6 +82,7 @@ export const setHandler: CommandHandler = async (args, ctx) => {
 
   await ctx.services.config.updateConfig({ [key]: parsed } as Record<string, unknown>);
   ctx.term.ok(`已设置 ${key} = ${JSON.stringify(parsed)}`);
+  if (!ctx.options.dryRun) await ctx.audit.append('config.set', { key, value: parsed });
 };
 
 /** 切换布尔值 */

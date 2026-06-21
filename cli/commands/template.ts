@@ -9,19 +9,6 @@ import type { CommandHandler } from '../types';
 import { parseFlags, topKeys } from '../utils';
 
 const TEMPLATES_DIR = path.join(os.homedir(), '.config', 'opencode', 'templates');
-const AUDIT_LOG_PATH = path.join(os.homedir(), '.config', 'opencode', '.audit.log');
-
-async function appendAuditLog(ctx: import('../types').CliContext, action: string, detail: Record<string, unknown>): Promise<void> {
-  if (ctx.options.dryRun) return;
-  const entry = { time: new Date().toISOString(), action, detail };
-  try {
-    const existing = JSON.parse(await ctx.fs.readFile(AUDIT_LOG_PATH)) as unknown[];
-    existing.push(entry);
-    await ctx.fs.writeFile(AUDIT_LOG_PATH, JSON.stringify(existing, null, 2));
-  } catch {
-    await ctx.fs.writeFile(AUDIT_LOG_PATH, JSON.stringify([entry], null, 2));
-  }
-}
 
 export const templateHandler: CommandHandler = async (args, ctx) => {
   const sub = args[0];
@@ -39,7 +26,7 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
   if (sub === 'save') {
     const name = args[1];
     if (!name) { ctx.term.err('用法: template save <名称>'); return; }
-    if (!/^[a-z0-9-]{2,32}$/.test(name)) { ctx.term.err('模板名称必须为小写字母、数字、连字符，2-32 字符'); return; }
+    if (!/^[a-z0-9-]{2,32}$/.test(name)) { ctx.term.err('非法模板名: 必须为小写字母、数字、连字符，2-32 字符'); return; }
 
     const config = await ctx.configPort.read();
     const existing = await (async () => {
@@ -47,9 +34,17 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
     })();
 
     if (ctx.options.dryRun) {
-      const overwrite = existing ? ' (overwrite=true)' : '';
-      ctx.term.info(`[DRY-RUN] 将保存模板: ${name}${overwrite}`);
-      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, name, overwrite: !!existing, topKeys: topKeys(config as Record<string, unknown>) });
+      ctx.term.info(`[DRY-RUN] 将保存模板: ${name} (overwrite=${!!existing})`);
+      if (ctx.options.json) {
+        ctx.term.jsonOut({
+          action: 'template.save',
+          name,
+          exists: !!existing,
+          wouldCreateDir: true,
+          keys: topKeys(config as Record<string, unknown>),
+          size: Buffer.byteLength(JSON.stringify(config)),
+        });
+      }
       return;
     }
 
@@ -57,7 +52,7 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
     await ctx.fs.writeFile(path.join(TEMPLATES_DIR, `${name}.json`), JSON.stringify(config, null, 2));
     if (existing) ctx.term.info(`模板 "${name}" 已覆盖`);
     else ctx.term.ok(`模板 "${name}" 已保存`);
-    await appendAuditLog(ctx, 'template.save', { name, overwrite: !!existing });
+    if (!ctx.options.dryRun) await ctx.audit.append('template.save', { name, overwrite: !!existing });
     return;
   }
 
@@ -70,7 +65,7 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
     if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将应用模板: ${name}`); return; }
     await ctx.configPort.write(template);
     ctx.term.ok(`已应用模板: ${name}`);
-    await appendAuditLog(ctx, 'template.apply', { name });
+    if (!ctx.options.dryRun) await ctx.audit.append('template.apply', { name });
     return;
   }
 
@@ -96,7 +91,7 @@ export const templateHandler: CommandHandler = async (args, ctx) => {
     }
     await ctx.fs.deleteFile(templatePath);
     ctx.term.ok(`模板 "${name}" 已删除`);
-    await appendAuditLog(ctx, 'template.delete', { name });
+    if (!ctx.options.dryRun) await ctx.audit.append('template.delete', { name });
     return;
   }
 
@@ -137,7 +132,13 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
   const ACTIVE_PROFILE_PATH = path.join(os.homedir(), '.config', 'opencode', '.active-profile');
 
   async function getActiveProfileName(): Promise<string | null> {
-    try { return (await ctx.fs.readFile(ACTIVE_PROFILE_PATH)).trim() || null; } catch { return null; }
+    try {
+      const raw = await ctx.fs.readFile(ACTIVE_PROFILE_PATH);
+      const trimmed = raw.trim();
+      if (!trimmed) return null;
+      try { return (JSON.parse(trimmed) as { name?: string }).name || trimmed; }
+      catch { return trimmed; }
+    } catch { return null; }
   }
 
   if (!sub || sub === 'list') {
@@ -162,16 +163,15 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
     })();
 
     if (ctx.options.dryRun) {
-      const overwrite = existing ? ' (overwrite=true)' : '';
-      ctx.term.info(`[DRY-RUN] 将保存 profile: ${name}${overwrite}`);
-      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, name, overwrite: !!existing });
+      ctx.term.info(`[DRY-RUN] 将保存 profile: ${name} (overwrite=${!!existing})`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'profile.save', name, exists: !!existing });
       return;
     }
 
     await ctx.fs.ensureDir(PROFILES_DIR);
     await ctx.fs.writeFile(path.join(PROFILES_DIR, `${name}.json`), JSON.stringify(config, null, 2));
     ctx.term.ok(`Profile "${name}" 已保存`);
-    await appendAuditLog(ctx, 'profile.save', { name, overwrite: !!existing });
+    if (!ctx.options.dryRun) await ctx.audit.append('profile.save', { name, overwrite: !!existing });
     return;
   }
 
@@ -185,14 +185,14 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
 
     if (ctx.options.dryRun) {
       ctx.term.info(`[DRY-RUN] 将切换 profile: ${name}`);
-      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, name, topKeys: topKeys(config as Record<string, unknown>) });
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'profile.use', name, topKeys: topKeys(config as Record<string, unknown>) });
       return;
     }
 
-    // 写入 .active-profile
-    await ctx.fs.writeFile(ACTIVE_PROFILE_PATH, name);
+    // 写入 .active-profile（JSON 对象格式）
+    await ctx.fs.writeFile(ACTIVE_PROFILE_PATH, JSON.stringify({ name }));
     ctx.term.ok(`已切换到 profile: ${name}`);
-    await appendAuditLog(ctx, 'profile.use', { name });
+    if (!ctx.options.dryRun) await ctx.audit.append('profile.use', { name });
     return;
   }
 
@@ -215,8 +215,8 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
     const active = await getActiveProfileName();
 
     if (ctx.options.dryRun) {
-      ctx.term.info(`[DRY-RUN] 将删除 profile: ${name}${name === active ? ' (isActive=true)' : ''}`);
-      if (ctx.options.json) ctx.term.jsonOut({ dryRun: true, name, isActive: name === active });
+      ctx.term.info(`[DRY-RUN] 将删除 profile: ${name} (isActive=${name === active})`);
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'profile.delete', name, isActive: name === active });
       return;
     }
 
@@ -231,7 +231,7 @@ export const profileHandler: CommandHandler = async (args, ctx) => {
       try { await ctx.fs.deleteFile(ACTIVE_PROFILE_PATH); } catch { /* ignore */ }
       ctx.term.info('当前激活的 profile 已被清除');
     }
-    await appendAuditLog(ctx, 'profile.delete', { name, wasActive: name === active });
+    if (!ctx.options.dryRun) await ctx.audit.append('profile.delete', { name, wasActive: name === active });
     return;
   }
 
