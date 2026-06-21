@@ -34,11 +34,9 @@ export class AuditService {
       detail,
     };
     await this.fs.ensureDir(this.logsDir);
-    // 追加一行 JSONL
-    const existing = await this.readAllRaw();
-    existing.push(entry);
-    const lines = existing.map(e => JSON.stringify(e));
-    await this.fs.writeFile(this.logPath, lines.join('\n') + '\n');
+    // 追加一行 JSONL（高性能模式：不读取历史）
+    const line = JSON.stringify(entry) + '\n';
+    await this.fs.appendFile(this.logPath, line);
   }
 
   /** 返回最近 N 条记录 */
@@ -54,21 +52,6 @@ export class AuditService {
 
   /** 读取全部记录 */
   async readAll(): Promise<AuditEntry[]> {
-    try {
-      const raw = await this.fs.readFile(this.logPath);
-      return raw.trim().split('\n')
-        .filter(line => line.trim().length > 0)
-        .map(line => {
-          try { return JSON.parse(line) as AuditEntry; } catch { return null; }
-        })
-        .filter((e): e is AuditEntry => e !== null);
-    } catch {
-      return [];
-    }
-  }
-
-  /** 读取全部原始字符串行 */
-  private async readAllRaw(): Promise<AuditEntry[]> {
     try {
       const raw = await this.fs.readFile(this.logPath);
       return raw.trim().split('\n')

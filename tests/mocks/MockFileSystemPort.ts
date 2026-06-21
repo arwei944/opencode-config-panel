@@ -31,6 +31,13 @@ export class MockFileSystemPort implements IFileSystemPort {
     this.dirs.add(dir || '/');
   }
 
+  async appendFile(filePath: string, content: string): Promise<void> {
+    const existing = this.files.get(filePath) || '';
+    this.files.set(filePath, existing + content);
+    const dir = filePath.split('/').slice(0, -1).join('/');
+    this.dirs.add(dir || '/');
+  }
+
   async deleteFile(filePath: string): Promise<void> {
     if (!this.files.has(filePath)) throw new Error(`文件不存在: ${filePath}`);
     this.files.delete(filePath);

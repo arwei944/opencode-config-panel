@@ -89,25 +89,25 @@ occ — Opencode 配置管理 CLI 工具
     enabled-providers set|clear|list    管理仅限提供商
 
    提供商管理:
-    add provider <URL> [apiKey]              智能添加提供商
-    remove provider <名称>                   删除提供商
-    provider update <名称> [--timeout] [...]  更新提供商选项
-    provider list-models <名称> [--verbose]  列出提供商模型详情
-    provider test [名称...]                    测试 provider 连通性
-    provider estimate <名称> [--input N] [--output N]  token/价格预估
-    provider doctor                           检查所有 provider
+     add provider <URL> [apiKey]              智能添加提供商
+     remove provider <名称>                   删除提供商
+     provider update <名称> [--timeout] [...]  更新提供商选项
+     provider list-models <名称> [--verbose]  列出提供商模型详情
+     provider test [名称...]                  检查 provider 配置存在性
+     provider estimate <名称> [--input N] [--output N]  token/价格预估
+     provider doctor                           检查所有 provider
 
-   备份与回滚:
-     backup create                       创建备份
-     backup list                         列出备份
-     backup restore <文件名>             恢复备份
-     backup delete <文件名>              删除备份
-     backup cleanup --keep <N|5d|12h>    按数量/时间清理
-     backup diff <a> <b>                 两个备份对比
-     backup watch --interval 10m         自动定时备份
-     rollback                            一键回滚（交互选择备份）
-     rollback <文件名>                   回滚到指定备份
-     rollback --latest | -l              一键回滚到最新备份
+    备份与回滚:
+      backup create                       创建备份
+      backup list                         列出备份
+      backup restore <文件名>             恢复备份
+      backup delete <文件名>              删除备份
+      backup cleanup --keep <N|5d|12h>    按数量/时间清理（N=保留数量，5d=保留5天）
+      backup diff <a> <b>                 两个备份对比
+      backup watch --interval 10m         自动定时备份
+      rollback                            一键回滚（交互选择备份）
+      rollback <文件名>                   回滚到指定备份
+      rollback --latest | -l              一键回滚到最新备份
 
    差异对比:
      diff <文件a> <文件b>                对比两个文件
@@ -169,7 +169,7 @@ occ — Opencode 配置管理 CLI 工具
        --cron-status / -s     查看后台自更新状态
        --quiet / -q           静默模式（仅 JSON 输出）
        --install / -i         等同于 --auto，强制安装最新版
-     ui                                   启动 Web 控制台（占位）
+     ui                                   启动 Web 控制台（未实现）
 
    回归测试:
     npm run test:cli                     运行完整命令回归测试

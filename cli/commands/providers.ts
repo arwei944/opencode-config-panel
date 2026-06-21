@@ -244,7 +244,18 @@ export const providerListModelsHandler: CommandHandler = async (args, ctx) => {
   const provider = await ctx.services.provider.get(name);
   if (!provider) { ctx.term.err(`提供商 "${name}" 不存在`); return; }
   const models = (provider as Record<string, unknown>).models as Record<string, { name?: string; context?: number }> | undefined;
-  if (!models || Object.keys(models).length === 0) { ctx.term.raw(`(无模型)`); return; }
+  if (!models || Object.keys(models).length === 0) {
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'provider.list-models', name, models: [] }); return; }
+    ctx.term.raw(`(无模型)`);
+    return;
+  }
+  const modelList = Object.entries(models).map(([mk, mv]) => ({
+    id: mk,
+    name: mv.name,
+    context: mv.context,
+    ...(flags.verbose ? { raw: mv } : {}),
+  }));
+  if (ctx.options.json) { ctx.term.jsonOut({ action: 'provider.list-models', name, models: modelList }); return; }
   ctx.term.raw(`${name} 模型 (${Object.keys(models).length}):`);
   for (const [mk, mv] of Object.entries(models)) {
     if (flags.verbose) {
@@ -292,6 +303,17 @@ export const providerEstimateHandler: CommandHandler = async (args, ctx) => {
   const outputCost = outputTokens * 0.00001;
   const total = inputCost + outputCost;
 
+  if (ctx.options.json) {
+    ctx.term.jsonOut({
+      action: 'provider.estimate',
+      name,
+      input: { tokens: inputTokens, cost: inputCost },
+      output: { tokens: outputTokens, cost: outputCost },
+      total,
+    });
+    return;
+  }
+
   ctx.term.raw(`=== ${name} 费用预估 ===`);
   ctx.term.raw(`  输入: ${inputTokens} tokens ≈ $${inputCost.toFixed(6)}`);
   ctx.term.raw(`  输出: ${outputTokens} tokens ≈ $${outputCost.toFixed(6)}`);
@@ -302,9 +324,21 @@ export const providerEstimateHandler: CommandHandler = async (args, ctx) => {
 export const providerDoctorHandler: CommandHandler = async (_args, ctx) => {
   const providers = await ctx.services.provider.list();
   if (Object.keys(providers).length === 0) { ctx.term.err('没有配置任何 provider'); return; }
-  ctx.term.ok(`共 ${Object.keys(providers).length} 个提供商`);
+  const checks: { name: string; type: string; modelCount: number }[] = [];
   for (const [name, p] of Object.entries(providers)) {
     const pAny = p as Record<string, unknown>;
-    ctx.term.raw(`  ${name}: type=${pAny.type || '?'}  models=${pAny.models ? Object.keys(pAny.models as Record<string, unknown>).length : 0}`);
+    checks.push({
+      name,
+      type: (pAny.type as string) || 'unknown',
+      modelCount: pAny.models ? Object.keys(pAny.models as Record<string, unknown>).length : 0,
+    });
+  }
+  if (ctx.options.json) {
+    ctx.term.jsonOut({ action: 'provider.doctor', providers: checks, total: checks.length });
+    return;
+  }
+  ctx.term.ok(`共 ${checks.length} 个提供商`);
+  for (const c of checks) {
+    ctx.term.raw(`  ${c.name}: type=${c.type}  models=${c.modelCount}`);
   }
 };

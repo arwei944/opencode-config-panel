@@ -75,37 +75,59 @@ export const backupHandler: CommandHandler = async (args, ctx) => {
     }
     const keepSpec = flags.keep as string;
     let keepCount: number | null = null;
-    if (/^\d+$/.test(keepSpec)) keepCount = parseInt(keepSpec, 10);
-    else { ctx.term.err('--keep 格式错误，应为数字或 5d/12h'); return; }
+    let keepAfter: Date | null = null;
+
+    // 纯数字格式：保留最近 N 个
+    if (/^\d+$/.test(keepSpec)) {
+      keepCount = parseInt(keepSpec, 10);
+    }
+    // 时间格式：5d/12h/30m — 保留指定时间内的备份
+    else {
+      const m = keepSpec.match(/^(\d+)([smhd])$/);
+      if (!m) { ctx.term.err('--keep 格式错误，应为数字或 5d/12h/30m'); return; }
+      const val = parseInt(m[1], 10);
+      const unit = m[2];
+      const now = Date.now();
+      const ms = unit === 's' ? val * 1000 : unit === 'm' ? val * 60000 : unit === 'h' ? val * 3600000 : val * 86400000;
+      keepAfter = new Date(now - ms);
+    }
 
     const backups = await ctx.backupPort.list();
-    if (backups.length <= keepCount!) { ctx.term.ok('无需清理'); return; }
+    if (backups.length === 0) { ctx.term.raw('(无备份)'); return; }
 
     // 按时间排序
     backups.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-    const toDelete = backups.slice(keepCount!);
-    const deletedIds: string[] = [];
+
+    let toDelete: typeof backups = [];
+    if (keepCount !== null) {
+      // 按数量保留
+      toDelete = backups.slice(keepCount);
+    } else if (keepAfter !== null) {
+      // 按时间保留
+      toDelete = backups.filter(b => new Date(b.timestamp || 0) < keepAfter!);
+    }
+
+    if (toDelete.length === 0) { ctx.term.ok('无需清理'); return; }
 
     if (ctx.options.dryRun) {
       for (const b of toDelete) ctx.term.info(`[DRY-RUN] 将删除: ${b.id}`);
-      if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.cleanup', dryRun: true, kept: keepCount, toDelete: toDelete.length, ids: toDelete.map(b => b.id) });
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.cleanup', dryRun: true, kept: keepCount || keepAfter?.toISOString(), toDelete: toDelete.length, ids: toDelete.map(b => b.id) });
       return;
     }
 
-    // dry-run 模式下跳过确认提示
+    // 确认提示
     if (!ctx.options.yes) {
       const ok = await ctx.prompt.confirm(`将删除 ${toDelete.length} 个旧备份，确认？(y/N) `);
       if (!ok) { ctx.term.raw('已取消'); return; }
     }
 
     let deleted = 0;
+    const deletedIds: string[] = [];
     for (const b of toDelete) {
-      await ctx.backupPort.delete(b.id);
-      deletedIds.push(b.id);
-      deleted++;
+      try { await ctx.backupPort.delete(b.id); deletedIds.push(b.id); deleted++; } catch { /* ignore */ }
     }
     ctx.term.ok(`已清理 ${deleted} 个备份`);
-    if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.cleanup', kept: keepCount, deleted: deleted, ids: deletedIds });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'backup.cleanup', kept: keepCount || keepAfter?.toISOString(), deleted, ids: deletedIds });
     return;
   }
 

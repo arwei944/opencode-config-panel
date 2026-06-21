@@ -133,6 +133,9 @@ export async function runCLI(argv: string[]): Promise<void> {
     validationPort,
     autoBackup: true,
     maxBackups: 10,
+    onBackupCreated: (info) => {
+      audit.append('backup.create', { id: info.id, auto: true }).catch(() => {});
+    },
   });
 
   const providerService = new ProviderService({

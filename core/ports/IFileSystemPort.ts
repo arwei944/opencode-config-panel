@@ -24,6 +24,9 @@ export interface IFileSystemPort {
   /** 写入文件内容（UTF-8） */
   writeFile(filePath: string, content: string): Promise<void>;
 
+  /** 追加文件内容（UTF-8） */
+  appendFile(filePath: string, content: string): Promise<void>;
+
   /** 删除文件 */
   deleteFile(filePath: string): Promise<void>;
 

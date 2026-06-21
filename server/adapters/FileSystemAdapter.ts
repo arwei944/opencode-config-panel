@@ -29,6 +29,11 @@ export class FileSystemAdapter implements IFileSystemPort {
     return fs.writeFile(filePath, content, 'utf-8');
   }
 
+  /** 追加文件内容 */
+  async appendFile(filePath: string, content: string): Promise<void> {
+    return fs.appendFile(filePath, content, 'utf-8');
+  }
+
   /** 删除文件 */
   async deleteFile(filePath: string): Promise<void> {
     return fs.unlink(filePath);

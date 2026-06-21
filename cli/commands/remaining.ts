@@ -869,6 +869,12 @@ export const pluginHandler: CommandHandler = async (args, ctx) => {
     const name = args[1];
     if (!name) { ctx.term.err('用法: plugin install <npm包名> [--global] [--force]'); return; }
 
+    // 验证插件名：仅允许字母、数字、连字符、点、下划线、@scope 格式
+    if (!/^(@[\w-]+\/)?[\w][\w.-]{0,251}$/.test(name)) {
+      ctx.term.err(`非法插件名: ${name}`);
+      return;
+    }
+
     const { flags } = parseFlags(args.slice(2), {
       global: { type: 'boolean', alias: 'g' },
       force: { type: 'boolean', alias: 'f' },
@@ -1194,7 +1200,9 @@ export const compactionHandler: CommandHandler = async (args, ctx) => {
 
   if (sub === 'show') {
     const config = await ctx.configPort.read();
-    ctx.term.raw(JSON.stringify((config as Record<string, unknown>).compaction || {}, null, 2));
+    const compaction = (config as Record<string, unknown>).compaction || {};
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'compaction.show', compaction }); return; }
+    ctx.term.raw(JSON.stringify(compaction, null, 2));
     return;
   }
 
@@ -1205,13 +1213,14 @@ export const compactionHandler: CommandHandler = async (args, ctx) => {
     if (flags['tail-turns'] !== undefined) update.tailTurns = flags['tail-turns'];
     if (flags.reserved !== undefined) update.reserved = flags.reserved;
     if (Object.keys(update).length === 0) { ctx.term.err('无可设置的选项'); return; }
-    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 compaction: ${JSON.stringify(update)}`); return; }
+    if (ctx.options.dryRun) { ctx.term.info(`[DRY-RUN] 将设置 compaction: ${JSON.stringify(update)}`); if (ctx.options.json) ctx.term.jsonOut({ action: 'compaction.set', dryRun: true, updates: update }); return; }
     const config = await ctx.configPort.read();
     const current = ((config as Record<string, unknown>).compaction || {}) as Record<string, unknown>;
     (config as Record<string, unknown>).compaction = { ...current, ...update };
     await ctx.configPort.write(config);
     ctx.term.ok('已更新压缩配置');
     if (!ctx.options.dryRun) await ctx.audit.append('compaction.set', { updates: update });
+    if (ctx.options.json) ctx.term.jsonOut({ action: 'compaction.set', updates: update });
     return;
   }
 
@@ -1227,7 +1236,9 @@ export const toolOutputHandler: CommandHandler = async (args, ctx) => {
 
   if (sub === 'show') {
     const config = await ctx.configPort.read();
-    ctx.term.raw(JSON.stringify((config as Record<string, unknown>).toolOutput || {}, null, 2));
+    const toolOutput = (config as Record<string, unknown>).toolOutput || {};
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'tool-output.show', toolOutput }); return; }
+    ctx.term.raw(JSON.stringify(toolOutput, null, 2));
     return;
   }
 
@@ -1254,7 +1265,9 @@ export const experimentalHandler: CommandHandler = async (args, ctx) => {
   const sub = args[0];
   if (sub === 'list') {
     const config = await ctx.configPort.read();
-    ctx.term.raw(JSON.stringify((config as Record<string, unknown>).experimental || {}, null, 2));
+    const experimental = (config as Record<string, unknown>).experimental || {};
+    if (ctx.options.json) { ctx.term.jsonOut({ action: 'experimental.list', experimental }); return; }
+    ctx.term.raw(JSON.stringify(experimental, null, 2));
     return;
   }
 
@@ -1299,6 +1312,7 @@ export const attachmentHandler: CommandHandler = async (args, ctx) => {
       await ctx.configPort.write(config);
       ctx.term.ok('已更新附件限制');
       if (!ctx.options.dryRun) await ctx.audit.append('attachment.set', { updates: update });
+      if (ctx.options.json) ctx.term.jsonOut({ action: 'attachment.set', updates: update });
       return;
     }
     ctx.term.err('用法: attachment set max-width|max-height|max-bytes <数字>');
@@ -1336,9 +1350,17 @@ export const uiHandler: CommandHandler = async (_args, ctx) => {
 // ============================================================
 // Self Update
 // ============================================================
+const ALLOWED_UPDATE_PACKAGES = ['opencode-config-panel'] as const;
+type AllowedPackage = (typeof ALLOWED_UPDATE_PACKAGES)[number];
+
 export const selfUpdateHandler: CommandHandler = async (args, ctx) => {
-  const pkgName = 'opencode-config-panel';
+  const pkgName: AllowedPackage = 'opencode-config-panel';
   const { execSync } = await import('node:child_process');
+
+  // 白名单校验：防止供应链攻击
+  if (!ALLOWED_UPDATE_PACKAGES.includes(pkgName as AllowedPackage)) {
+    throw new Error(`不允许更新包: ${pkgName}`);
+  }
 
   // 解析参数
   const { flags } = parseFlags(args, {

@@ -20,6 +20,8 @@ export interface ConfigServiceOptions {
   autoBackup?: boolean;
   /** 最大保留备份份数（默认 10） */
   maxBackups?: number;
+  /** 备份创建完成回调（用于审计日志） */
+  onBackupCreated?: (info: BackupInfo) => void;
 }
 
 /**
@@ -34,6 +36,7 @@ export class ConfigService {
   private validationPort: IValidationPort;
   private autoBackup: boolean;
   private maxBackups: number;
+  private onBackupCreated?: (info: BackupInfo) => void;
   private cachedConfig: OpenCodeConfig | null = null;
   private loadPromise: Promise<OpenCodeConfig> | null = null;
 
@@ -43,6 +46,7 @@ export class ConfigService {
     this.validationPort = options.validationPort;
     this.autoBackup = options.autoBackup ?? true;
     this.maxBackups = options.maxBackups ?? 10;
+    this.onBackupCreated = options.onBackupCreated;
   }
 
   /** 获取完整配置（带缓存和并发锁） */
@@ -72,8 +76,11 @@ export class ConfigService {
   async save(config: OpenCodeConfig): Promise<void> {
     if (this.autoBackup) {
       try {
-        await this.backupPort.create(config);
+        const backupInfo = await this.backupPort.create(config);
         await this.backupPort.clean(this.maxBackups);
+        if (this.onBackupCreated) {
+          this.onBackupCreated(backupInfo);
+        }
       } catch (err) {
         console.error('备份创建失败:', (err as Error).message);
       }
