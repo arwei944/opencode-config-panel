@@ -38,7 +38,7 @@ occ — Opencode 配置管理 CLI 工具
   4. 失败时优先回滚
 
 常用命令:
-  状态查看:
+   状态查看:
     status                          显示配置概览
     get <键>                        获取配置值 (如 model, default_agent)
     doctor                          健康检查（providers/models/agents/skills/backups）
@@ -46,12 +46,13 @@ occ — Opencode 配置管理 CLI 工具
     list providers                  列出所有提供商
     list models [提供商]             列出模型
     list agents                     列出所有代理
-    list tools                      列出所有工具
-    tool list [--verbose]           列出工具详情
+    tool list [--verbose]           列出工具及状态
     tool reset                      重置工具配置
     list skills                     列出所有技能
     list mcp                        列出 MCP 服务器
     list backups                    列出备份
+    reference list                  列出引用
+    command list                    列出自定义命令
 
   配置修改:
     set <键> <值>                   设置配置值
@@ -93,7 +94,7 @@ occ — Opencode 配置管理 CLI 工具
      remove provider <名称>                   删除提供商
      provider update <名称> [--timeout] [...]  更新提供商选项
      provider list-models <名称> [--verbose]  列出提供商模型详情
-     provider test [名称...]                  检查 provider 配置存在性
+     provider test [名称...]                  检查 provider 配置存在性并进行网络连通性测试
      provider estimate <名称> [--input N] [--output N]  token/价格预估
      provider doctor                           检查所有 provider
 
@@ -134,13 +135,15 @@ occ — Opencode 配置管理 CLI 工具
    自定义命令:
     command add <名称> --template <模板> [...]   添加自定义命令
     command remove <名称>                       删除自定义命令
-    list commands                               列出自定义命令
+    command edit <名称>                         编辑自定义命令模板
+    command run <名称> [参数...]                 执行自定义命令
+    command list                                列出自定义命令
 
    引用管理:
     reference add <名称> <路径> [--description]   添加本地引用
     reference add <名称> <URL> --branch <分支>    添加 Git 引用
     reference remove <名称>                       删除引用
-    list references                               列出引用
+    reference list                               列出引用
 
    高级配置:
     compaction set|show [--auto] [--prune] [--tail-turns] [--reserved]   上下文压缩配置
@@ -169,19 +172,26 @@ occ — Opencode 配置管理 CLI 工具
        --cron-status / -s     查看后台自更新状态
        --quiet / -q           静默模式（仅 JSON 输出）
        --install / -i         等同于 --auto，强制安装最新版
-     ui                                   启动 Web 控制台（未实现）
+       ui [--no-open]                           启动 Web 控制台（自动打开浏览器，--no-open 禁止自动打开）
 
    回归测试:
     npm run test:cli                     运行完整命令回归测试
     node scripts/test-cli.mjs            直接执行回归测试脚本
 
-   常用速查:
+    常用速查:
     status                               查看配置概览
     doctor                               健康检查
     backup list                          查看备份列表
     template list                        查看模板列表
     profile list                         查看 profile 列表
     key list                             查看密钥列表
+    list providers                       查看提供商列表
+    list models                          查看模型列表
+    list agents                          查看代理列表
+    list skills                          查看技能列表
+    list mcp                             查看 MCP 服务器列表
+    reference list                       查看引用列表
+    command list                         查看自定义命令列表
 
  示例:
   node scripts/occ.mjs status

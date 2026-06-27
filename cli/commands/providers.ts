@@ -97,8 +97,46 @@ export const listHandler: CommandHandler = async (args, ctx) => {
     }
     case 'tools':
     case 'tool': {
-      if (ctx.options.json) { ctx.term.jsonOut({ action: 'list.tools', tools: [] }); return; }
-      return ctx.term.raw('工具: (使用默认配置)');
+      const { flags } = parseFlags(args.slice(1), { verbose: { type: 'boolean', alias: 'v' } });
+      const config = await ctx.configPort.read();
+      const tools = (config.tools || {}) as Record<string, boolean>;
+      const enabledCount = Object.values(tools).filter(Boolean).length;
+      const disabledCount = Object.keys(tools).length - enabledCount;
+
+      if (ctx.options.json) {
+        ctx.term.jsonOut({
+          action: 'list.tools',
+          tools: Object.entries(tools).map(([name, enabled]) => ({ name, enabled })),
+          summary: { total: Object.keys(tools).length, enabled: enabledCount, disabled: disabledCount }
+        });
+        return;
+      }
+
+      if (Object.keys(tools).length === 0) {
+        ctx.term.raw('工具: (使用默认配置，未手动调整)');
+        return;
+      }
+
+      ctx.term.raw(`工具 (${Object.keys(tools).length}):`);
+      ctx.term.raw(`  启用: ${enabledCount} / 禁用: ${disabledCount}`);
+      for (const [name, enabled] of Object.entries(tools)) {
+        if (flags.verbose) {
+          const parts = [`  ${name}`];
+          parts.push(`状态: ${enabled ? '启用' : '禁用'}`);
+          // 尝试从 config 中获取更详细的工具信息
+          const toolConfig = (config as Record<string, unknown>).tools as Record<string, Record<string, unknown>> | undefined;
+          if (toolConfig && toolConfig[name] && typeof toolConfig[name] === 'object') {
+            const toolDetail = toolConfig[name] as Record<string, unknown>;
+            if (toolDetail.description) parts.push(`描述: ${toolDetail.description}`);
+            if (toolDetail.category) parts.push(`分类: ${toolDetail.category}`);
+            if (toolDetail.version) parts.push(`版本: ${toolDetail.version}`);
+          }
+          ctx.term.raw(parts.join('  '));
+        } else {
+          ctx.term.raw(`  ${name}: ${enabled ? '启用' : '禁用'}`);
+        }
+      }
+      return;
     }
     case 'skills':
     case 'skill': {
@@ -269,20 +307,65 @@ export const providerListModelsHandler: CommandHandler = async (args, ctx) => {
 /** 测试提供商连通性 */
 export const providerTestHandler: CommandHandler = async (args, ctx) => {
   const config = await ctx.configPort.read();
-  const providers = (config.provider || {}) as Record<string, { options?: { baseURL?: string; apiKey?: string } }>;
+  const providers = (config.provider || {}) as Record<string, { options?: { baseURL?: string; apiKey?: string }; type?: string }>;
   const targets = args.length > 0 ? args : Object.keys(providers);
   if (targets.length === 0) { ctx.term.err('没有可测试的 provider'); return; }
+
+  const results: { name: string; reachable: boolean; latencyMs: number; error?: string; baseURL?: string }[] = [];
 
   for (const name of targets) {
     const p = providers[name];
     if (!p) { ctx.term.err(`${name}: 不存在`); continue; }
     ctx.term.info(`测试 ${name}...`);
-    // 简单检查配置存在性
-    if (p.options?.baseURL) {
-      ctx.term.ok(`${name}: baseURL 已配置 (${p.options.baseURL})`);
-    } else {
+
+    // 检查配置存在性
+    if (!p.options?.baseURL) {
       ctx.term.err(`${name}: 缺少 baseURL`);
+      results.push({ name, reachable: false, latencyMs: 0, error: '缺少 baseURL' });
+      continue;
     }
+
+    const baseURL = p.options.baseURL;
+    results.push({ name, reachable: false, latencyMs: 0, baseURL });
+
+    // 网络连通性测试
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const startTime = Date.now();
+
+      // 尝试请求 baseURL（通常 /v1/models 或根路径）
+      const testURL = baseURL.replace(/\/$/, '') + '/v1/models';
+      const res = await fetch(testURL, {
+        method: 'GET',
+        headers: p.options.apiKey ? { Authorization: `Bearer ${p.options.apiKey}` } : {},
+        signal: controller.signal,
+      });
+
+      const latencyMs = Date.now() - startTime;
+      clearTimeout(timeout);
+
+      const reachable = res.ok || res.status < 500;
+      const result = results[results.length - 1];
+      result.reachable = reachable;
+      result.latencyMs = latencyMs;
+
+      if (reachable) {
+        ctx.term.ok(`${name}: 可达 (${latencyMs}ms, HTTP ${res.status})`);
+      } else {
+        ctx.term.warn(`${name}: 异常 (${latencyMs}ms, HTTP ${res.status})`);
+        result.error = `HTTP ${res.status}`;
+      }
+    } catch (e) {
+      const result = results[results.length - 1];
+      result.reachable = false;
+      result.error = (e as Error).message;
+      ctx.term.warn(`${name}: 不可达 (${(e as Error).message})`);
+    }
+  }
+
+  if (ctx.options.json) {
+    ctx.term.jsonOut({ action: 'provider.test', results });
   }
 };
 

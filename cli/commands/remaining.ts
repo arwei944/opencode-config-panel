@@ -1341,11 +1341,71 @@ export const attachmentHandler: CommandHandler = async (args, ctx) => {
 };
 
 // ============================================================
-// UI（占位 — 按旧 CLI 行为保留导出）
+// UI（启动 Web 控制台）
 // ============================================================
-export const uiHandler: CommandHandler = async (_args, ctx) => {
-  ctx.term.info('启动 Web 控制台...');
-  ctx.term.raw('请在浏览器中访问 https://127.0.0.1:3456');
+export const uiHandler: CommandHandler = async (args, ctx) => {
+  const { flags } = parseFlags(args, {
+    'no-open': { type: 'boolean', alias: 'n' },
+  });
+  const noOpen = flags['no-open'] || args.includes('--no-open') || args.includes('-n');
+
+  const config = await ctx.configPort.read();
+  const serverConfig = (config.server || {}) as Record<string, unknown>;
+  const port = (serverConfig.port as number) || 3456;
+  const hostname = (serverConfig.hostname as string) || '127.0.0.1';
+  const mdnsEnabled = serverConfig.mdns !== false;
+
+  // 检查服务器是否已在运行
+  const pidFile = path.join(CONFIG_DIR, 'server.pid');
+  try {
+    const existingPid = (await ctx.fs.readFile(pidFile)).trim();
+    try { process.kill(Number(existingPid), 0); } catch {
+      // 进程不存在，清理 stale pid file
+      await ctx.fs.deleteFile(pidFile);
+    }
+  } catch { /* no pid file — proceed */ }
+
+  ctx.term.info(`启动 Web 控制台 (端口 ${port})...`);
+
+  try {
+    const { spawn } = await import('node:child_process');
+    const child = spawn('npx', ['vite', '--port', String(port), '--host', hostname], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    await ctx.fs.writeFile(pidFile, String(child.pid));
+
+    const protocol = hostname === '0.0.0.0' ? 'http' : 'https';
+    const url = `${protocol}://${hostname}:${port}`;
+    ctx.term.ok(`Web 控制台已启动`);
+    ctx.term.raw(`请在浏览器中访问: ${url}`);
+    if (mdnsEnabled) {
+      ctx.term.raw(`或通过 mDNS 访问: https://${hostname}.local:${port}`);
+    }
+
+    // 自动打开浏览器（除非指定 --no-open）
+    if (!noOpen) {
+      try {
+        const { execSync } = await import('node:child_process');
+        const openCmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+        execSync(`${openCmd} ${url}`, { stdio: 'ignore' });
+        ctx.term.ok(`已自动打开浏览器`);
+      } catch {
+        ctx.term.warn(`无法自动打开浏览器，请手动访问上述地址`);
+      }
+    }
+
+    if (ctx.options.json) {
+      ctx.term.jsonOut({ action: 'ui.start', url, pid: child.pid, port, hostname, opened: !noOpen });
+    }
+  } catch (e) {
+    ctx.term.err(`启动失败: ${(e as Error).message}`);
+    if (ctx.options.json) {
+      ctx.term.jsonOut({ action: 'ui.start', error: (e as Error).message });
+    }
+  }
 };
 
 // ============================================================
